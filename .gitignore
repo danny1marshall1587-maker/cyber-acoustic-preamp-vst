@@ -1,0 +1,28 @@
+# Build Directories
+build/
+bin/
+lib/
+*.dir/
+CMakeScripts/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# IDE / Editor
+.vs/
+.vscode/
+*.user
+*.suo
+.idea/
+*.xcodeproj/
+*.xcworkspace/
+
+# OS Specific
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# JUCE Generated
+JUCE/
+*_artefacts/
