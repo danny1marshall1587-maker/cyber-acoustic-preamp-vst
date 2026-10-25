@@ -1,0 +1,114 @@
+name: Multi-Platform Plugin Build & Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  PROJECT_NAME: CyberAcousticPreamp
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libjack-jackd2-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxinerama-dev \
+            libxext-dev libxrender-dev libxrandr-dev libglu1-mesa-dev \
+            mesa-common-dev libfreetype6-dev libfontconfig1-dev \
+            libcurl4-openssl-dev libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libx11-xcb-dev libxcb-util-dev libxcb-cursor-dev \
+            libxcb-keysyms1-dev libxcb-xinerama0-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-randr0-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release ${{ runner.os == 'macOS' && '-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET="11.0"' || '' }}
+
+      - name: Build Plugins
+        run: cmake --build build --config Release -j 4
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PROJECT_NAME }}-${{ runner.os }}
+          path: build/${{ env.PROJECT_NAME }}_artefacts/Release/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download MacOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.PROJECT_NAME }}-macOS
+          path: Mac
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.PROJECT_NAME }}-Windows
+          path: Win
+
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.PROJECT_NAME }}-Linux
+          path: Linux
+
+      - name: Package Release Archives
+        run: |
+          zip -r Cyber-Acoustic-Preamp-MacOS.zip Mac/
+          zip -r Cyber-Acoustic-Preamp-Windows.zip Win/
+          zip -r Cyber-Acoustic-Preamp-Linux.zip Linux/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Cyber-Acoustic-Preamp-MacOS.zip
+            Cyber-Acoustic-Preamp-Windows.zip
+            Cyber-Acoustic-Preamp-Linux.zip
+          name: "Cyber Acoustic Preamp v1.0.0"
+          tag_name: "v1.0.0"
+          body: |
+            # Cyber Acoustic Preamp v1.0.0 — Official Multi-Platform Release
+            
+            **Ultimate Fluid Space Acoustic Guitar Pickup Preamp & Cavity Physics**
+            *Free and Open Source Standalone Application and VST3 / AU / LV2 Plugin*
+            
+            ### Included Packages:
+            - **Windows x64**: Standalone (.exe) + VST3 + LV2
+            - **macOS Universal Binary (Apple Silicon M1-M5 + Intel x86_64)**: Standalone (.app) + AU (.component) + VST3 + LV2
+            - **Linux x64**: Standalone + VST3 + LV2
+            
+            ### Features:
+            - **Mechanical Soundboard Inertia**: Recreates physical bridge/top-plate mass to eliminate piezo quack.
+            - **2-DOF Coupled Fluid Cavity Engine**: Christensen coupled air-body physics for 8 iconic guitar body shapes.
+            - **Smart De-Fizz**: 4-stage flexural wave dispersion smear + Linkwitz-Riley dynamic high-frequency clamp.
+            - **Auto-Tracking Feedback Killer**: True -inf dB surgical SVF nulls for live stage feedback prevention.
+            - **Stereo Acoustic Imager**: Virtual studio condenser mic pair (12th fret vs bridge soundhole).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
