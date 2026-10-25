@@ -91,23 +91,22 @@ jobs:
             Cyber-Acoustic-Preamp-MacOS.zip
             Cyber-Acoustic-Preamp-Windows.zip
             Cyber-Acoustic-Preamp-Linux.zip
-          name: "Cyber Acoustic Preamp v1.1.0"
-          tag_name: "v1.1.0"
+          name: "Cyber Acoustic Preamp v1.2.0"
+          tag_name: "v1.2.0"
           body: |
-            # Cyber Acoustic Preamp v1.1.0 — High-Performance ASIO & Mono Input Release
+            # Cyber Acoustic Preamp v1.2.0 — Fluid Dynamics Reverb Space Release
             
             **Ultimate Fluid Space Acoustic Guitar Pickup Preamp & Cavity Physics**
             *Free and Open Source Standalone Application and VST3 / AU / LV2 Plugin*
             
-            ### What's New in v1.1.0:
-            - **High-Performance ASIO Support (Windows)**: Added native Steinberg ASIO driver backend (`JUCE_ASIO=1`) and WASAPI Exclusive support (`JUCE_WASAPI_EXCLUSIVE=1`) for ultra-low latency real-time performance (< 2.5ms round-trip).
-            - **Dedicated Mono Input Routing**: Built-in 1-tap input selector with 5 modes:
-              - `Mono: Input 1 (Left / Inst 1)`
-              - `Mono: Input 2 (Right / Inst 2)`
-              - `Mono: Auto-Detect Active`
-              - `Stereo Sum (-3dB)`
-              - `Stereo Discrete`
-            - **Phase-Coherent Stereo Room Imager**: Accurately maps single mono guitar inputs across the 3D fluid cavity and virtual stereo mic pair without volume drop or comb filtering.
+            ### What's New in v1.2.0:
+            - **Euphoria Amp Pure Fluid Dynamics Reverb Space (`FluidReverbSpace`)**:
+              - Integrated the studio reverb engine from Euphoria Amp with Abbey Road send filters, 12AT7 tube driver, dual allpass diffusers, 4x4 Hadamard FDN delay network, and corner eddy boundary turbulence.
+              - 4 dedicated reverb controls: `Reverb Mix`, `Reverb Decay`, `Room Size`, and `Tone / Damp`.
+            - **High-Performance ASIO Support (Windows)**:
+              - Native Steinberg ASIO driver backend (`JUCE_ASIO=1`) and WASAPI Exclusive support (`JUCE_WASAPI_EXCLUSIVE=1`) for sub-3ms ultra-low latency.
+            - **Dedicated Mono Input Routing**:
+              - 1-tap input selector with 5 modes (`Mono In 1`, `Mono In 2`, `Auto-Detect Active`, `Stereo Sum`, `Stereo Discrete`).
             
             ### Included Packages:
             - **Windows x64**: Standalone (.exe with ASIO) + VST3 + LV2
