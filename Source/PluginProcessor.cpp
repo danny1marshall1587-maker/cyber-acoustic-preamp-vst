@@ -3,7 +3,7 @@
 
 CyberAcousticProcessor::CyberAcousticProcessor()
     : AudioProcessor(BusesProperties()
-                     .withInput("Input", juce::AudioChannelSet::stereo(), true)
+                     .withInput("Input", juce::AudioChannelSet::mono(), true)
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
@@ -16,6 +16,17 @@ CyberAcousticProcessor::~CyberAcousticProcessor()
 juce::AudioProcessorValueTreeState::ParameterLayout CyberAcousticProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
+
+    juce::StringArray inputModes = {
+        "Mono In (Input 1 / Left)",
+        "Mono In (Input 2 / Right)",
+        "Auto-Detect Active Mono",
+        "Stereo Sum (-3dB)",
+        "Stereo Discrete"
+    };
+
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID("inputRouting", 1), "Input Routing", inputModes, 0));
 
     juce::StringArray bodyTypes = {
         "Dreadnought (D-28)",
@@ -124,6 +135,7 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         buffer.clear(i, 0, buffer.getNumSamples());
 
     // Fetch normalized parameter values
+    int inputMode = (int)apvts.getRawParameterValue("inputRouting")->load();
     int bodyType = (int)apvts.getRawParameterValue("bodyType")->load();
     float bodySize = apvts.getRawParameterValue("bodySize")->load();
     float bodyShape = apvts.getRawParameterValue("bodyShape")->load();
@@ -151,45 +163,79 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     auto numSamples = buffer.getNumSamples();
     float maxAbs = 0.0f;
 
-    if (totalNumInputChannels == 1 && totalNumOutputChannels >= 2) {
-        // Mono in -> Stereo out
-        const float* inData = buffer.getReadPointer(0);
-        float* outL = buffer.getWritePointer(0);
-        float* outR = buffer.getWritePointer(1);
+    const float* inL = (totalNumInputChannels > 0) ? buffer.getReadPointer(0) : nullptr;
+    const float* inR = (totalNumInputChannels > 1) ? buffer.getReadPointer(1) : nullptr;
 
+    float* outL = (totalNumOutputChannels > 0) ? buffer.getWritePointer(0) : nullptr;
+    float* outR = (totalNumOutputChannels > 1) ? buffer.getWritePointer(1) : nullptr;
+
+    if (inputMode == 4 && totalNumInputChannels >= 2) {
+        // Mode 4: Stereo Discrete Processing
         for (int n = 0; n < numSamples; ++n) {
-            float monoIn = inData[n];
+            float sL = inL ? inL[n] : 0.0f;
+            float sR = inR ? inR[n] : 0.0f;
+            float dummy1 = 0.0f, dummy2 = 0.0f;
+
             float l = 0.0f, r = 0.0f;
-            dspEngineLeft.process(monoIn, l, r, quack, depth, defizz, shimmer, width,
+            dspEngineLeft.process(sL, l, dummy1, quack, depth, defizz, shimmer, width,
                                   bodyType, bodySize, bodyShape, gainLin);
-            outL[n] = l;
-            outR[n] = r;
+            dspEngineRight.process(sR, dummy2, r, quack, depth, defizz, shimmer, width,
+                                   bodyType, bodySize, bodyShape, gainLin);
+
+            float mid = 0.5f * (l + r);
+            float side = 0.5f * (l - r) * width;
+            if (outL) outL[n] = mid + side;
+            if (outR) outR[n] = mid - side;
 
             maxAbs = std::max(maxAbs, std::max(std::abs(l), std::abs(r)));
         }
     } else {
-        // Stereo in -> Stereo out
-        float* outL = buffer.getWritePointer(0);
-        float* outR = buffer.getWritePointer(totalNumOutputChannels > 1 ? 1 : 0);
-
+        // Mono Acoustic Guitar Modes (Mode 0: In 1, Mode 1: In 2, Mode 2: Auto, Mode 3: Sum)
         for (int n = 0; n < numSamples; ++n) {
-            float inSampleL = outL[n];
-            float inSampleR = outR[n];
-            float dummy1 = 0, dummy2 = 0;
+            float guitarMono = 0.0f;
 
+            if (totalNumInputChannels == 1) {
+                guitarMono = inL ? inL[n] : 0.0f;
+            } else if (totalNumInputChannels >= 2) {
+                float sL = inL ? inL[n] : 0.0f;
+                float sR = inR ? inR[n] : 0.0f;
+
+                switch (inputMode) {
+                    case 0: // Mono In (Input 1 / Left / Inst 1)
+                        guitarMono = sL;
+                        break;
+                    case 1: // Mono In (Input 2 / Right / Inst 2)
+                        guitarMono = sR;
+                        break;
+                    case 2: // Auto-Detect Active Mono
+                        if (std::abs(sL) > 1e-4f && std::abs(sR) < 1e-5f) {
+                            guitarMono = sL;
+                        } else if (std::abs(sR) > 1e-4f && std::abs(sL) < 1e-5f) {
+                            guitarMono = sR;
+                        } else {
+                            guitarMono = (sL + sR) * 0.7071f;
+                        }
+                        break;
+                    case 3: // Stereo Sum (-3dB)
+                    default:
+                        guitarMono = (sL + sR) * 0.7071f;
+                        break;
+                }
+            }
+
+            // Process mono acoustic guitar through fluid space cavity & stereo mic imager
             float l = 0.0f, r = 0.0f;
-            dspEngineLeft.process(inSampleL, l, dummy1, quack, depth, defizz, shimmer, width,
+            dspEngineLeft.process(guitarMono, l, r, quack, depth, defizz, shimmer, width,
                                   bodyType, bodySize, bodyShape, gainLin);
-            dspEngineRight.process(inSampleR, dummy2, r, quack, depth, defizz, shimmer, width,
-                                   bodyType, bodySize, bodyShape, gainLin);
 
-            // Recombine with stereo width
-            float mid = 0.5f * (l + r);
-            float side = 0.5f * (l - r) * width;
-            outL[n] = mid + side;
-            outR[n] = mid - side;
+            if (totalNumOutputChannels >= 2) {
+                if (outL) outL[n] = l;
+                if (outR) outR[n] = r;
+            } else if (totalNumOutputChannels == 1) {
+                if (outL) outL[n] = 0.5f * (l + r);
+            }
 
-            maxAbs = std::max(maxAbs, std::max(std::abs(outL[n]), std::abs(outR[n])));
+            maxAbs = std::max(maxAbs, std::max(std::abs(l), std::abs(r)));
         }
     }
 
