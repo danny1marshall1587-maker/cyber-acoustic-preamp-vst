@@ -19,6 +19,16 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
         loadPreset(presetSelector.getSelectedId());
     };
 
+    // 1b. Input Routing Selector
+    addAndMakeVisible(inputSelector);
+    inputSelector.addItem("Input: Mono (In 1 / Left)", 1);
+    inputSelector.addItem("Input: Mono (In 2 / Right)", 2);
+    inputSelector.addItem("Input: Auto-Detect Active", 3);
+    inputSelector.addItem("Input: Stereo Sum (-3dB)", 4);
+    inputSelector.addItem("Input: Stereo Discrete", 5);
+    inputAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        audioProcessor.apvts, "inputRouting", inputSelector);
+
     // Helper for configuring sliders
     auto setupRotary = [this](juce::Slider& s, juce::Label& l, const juce::String& text, const juce::String& suffix) {
         s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -216,8 +226,9 @@ void CyberAcousticEditor::resized()
     auto area = getLocalBounds();
     auto header = area.removeFromTop(56);
 
-    // Preset selector right-aligned in header
-    presetSelector.setBounds(header.getRight() - 310, 14, 290, 28);
+    // Header controls: Input Selector & Preset Selector
+    presetSelector.setBounds(header.getRight() - 300, 14, 280, 28);
+    inputSelector.setBounds(header.getRight() - 530, 14, 215, 28);
 
     auto mainArea = area.reduced(16);
     int colW = mainArea.getWidth() / 3;
