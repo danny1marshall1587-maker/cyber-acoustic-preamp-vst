@@ -21,8 +21,10 @@ private:
     CyberAcoustic::CustomAcousticLookAndFeel lookAndFeel;
     CyberAcoustic::GuitarBodyVisualizer visualizer;
 
-    // Presets Bar
+    // Presets Bar & Input Selector
     juce::ComboBox presetSelector;
+    juce::ComboBox inputSelector;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> inputAttachment;
 
     // Controls: Transducer & Anti-Quack
     juce::Slider quackSlider;
