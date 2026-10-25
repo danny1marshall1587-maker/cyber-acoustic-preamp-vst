@@ -81,6 +81,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout CyberAcousticProcessor::crea
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("feedbackDepth2", 1), "AFD Depth 2", 0.0f, 100.0f, 75.0f));
 
+    // Pure Fluid Dynamics Reverb Space (From Euphoria Amp)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("reverbMix", 1), "Reverb Mix", 0.0f, 100.0f, 22.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("reverbDecay", 1), "Reverb Decay", 0.0f, 100.0f, 45.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("reverbSize", 1), "Reverb Size", 0.5f, 2.5f, 1.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("reverbTone", 1), "Reverb High Cut", 1500.0f, 16000.0f, 6500.0f));
+
     return { params.begin(), params.end() };
 }
 
@@ -147,6 +157,11 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     float gainDb = apvts.getRawParameterValue("outputGain")->load();
     float gainLin = std::pow(10.0f, gainDb / 20.0f);
 
+    float revMix = apvts.getRawParameterValue("reverbMix")->load() / 100.0f;
+    float revDecay = apvts.getRawParameterValue("reverbDecay")->load() / 100.0f;
+    float revSize = apvts.getRawParameterValue("reverbSize")->load();
+    float revTone = apvts.getRawParameterValue("reverbTone")->load();
+
     bool fbKill1 = apvts.getRawParameterValue("feedbackKill1")->load() > 0.5f;
     float fbFreq1 = apvts.getRawParameterValue("feedbackFreq1")->load();
     float fbDepth1 = apvts.getRawParameterValue("feedbackDepth1")->load() / 100.0f;
@@ -178,9 +193,11 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
             float l = 0.0f, r = 0.0f;
             dspEngineLeft.process(sL, l, dummy1, quack, depth, defizz, shimmer, width,
-                                  bodyType, bodySize, bodyShape, gainLin);
+                                  bodyType, bodySize, bodyShape,
+                                  revMix, revDecay, revSize, revTone, gainLin);
             dspEngineRight.process(sR, dummy2, r, quack, depth, defizz, shimmer, width,
-                                   bodyType, bodySize, bodyShape, gainLin);
+                                   bodyType, bodySize, bodyShape,
+                                   revMix, revDecay, revSize, revTone, gainLin);
 
             float mid = 0.5f * (l + r);
             float side = 0.5f * (l - r) * width;
@@ -226,7 +243,8 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             // Process mono acoustic guitar through fluid space cavity & stereo mic imager
             float l = 0.0f, r = 0.0f;
             dspEngineLeft.process(guitarMono, l, r, quack, depth, defizz, shimmer, width,
-                                  bodyType, bodySize, bodyShape, gainLin);
+                                  bodyType, bodySize, bodyShape,
+                                  revMix, revDecay, revSize, revTone, gainLin);
 
             if (totalNumOutputChannels >= 2) {
                 if (outL) outL[n] = l;
