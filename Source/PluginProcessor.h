@@ -36,6 +36,9 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
     float getCurrentAudioLevel() const { return currentAudioLevel.load(); }
+    float getInputRmsDb() const { return currentInputRms.load(); }
+    float getInputPeakDb() const { return currentInputPeak.load(); }
+    float getMatchedBypassGain() const { return currentMatchedGain.load(); }
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
@@ -44,6 +47,13 @@ private:
     CyberAcoustic::CyberAcousticEngine dspEngineRight;
 
     std::atomic<float> currentAudioLevel { 0.0f };
+    std::atomic<float> currentInputRms { -100.0f };
+    std::atomic<float> currentInputPeak { -100.0f };
+    std::atomic<float> currentMatchedGain { 1.0f };
+
+    float dryRmsFiltered = 0.0f;
+    float wetRmsFiltered = 0.0f;
+    float targetMatchedGain = 1.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CyberAcousticProcessor)
 };

@@ -28,6 +28,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout CyberAcousticProcessor::crea
     params.push_back(std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID("inputRouting", 1), "Input Routing", inputModes, 0));
 
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("inputGain", 1), "Input Gain", -24.0f, 24.0f, 0.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID("masterBypass", 1), "A/B Matched Bypass", false));
+
     juce::StringArray bodyTypes = {
         "Dreadnought (D-28)",
         "Jumbo (J-200)",
@@ -36,7 +42,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout CyberAcousticProcessor::crea
         "Parlor (Single-0)",
         "Classical Nylon",
         "Acoustic Archtop",
-        "Selmer Maccaferri"
+        "Selmer Maccaferri",
+        "F-Style Mandolin (F-5)"
     };
 
     params.push_back(std::make_unique<juce::AudioParameterChoice>(
@@ -116,6 +123,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout CyberAcousticProcessor::crea
         juce::ParameterID("feedbackDepth2", 1), "AFD Depth 2", 0.0f, 100.0f, 75.0f));
 
     // Pure Fluid Dynamics Reverb Space (From Euphoria Amp)
+    juce::StringArray reverbTypes = { "Studio Room", "Concert Hall", "Vintage Plate" };
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID("reverbType", 1), "Reverb Type", reverbTypes, 0));
+
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("reverbMix", 1), "Reverb Mix", 0.0f, 100.0f, 22.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
@@ -180,6 +191,10 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     // Fetch normalized parameter values
     int inputMode = (int)apvts.getRawParameterValue("inputRouting")->load();
+    float inGainDb = apvts.getRawParameterValue("inputGain")->load();
+    float inGainLin = std::pow(10.0f, inGainDb / 20.0f);
+    bool  masterBypass = apvts.getRawParameterValue("masterBypass")->load() > 0.5f;
+
     int bodyType = (int)apvts.getRawParameterValue("bodyType")->load();
     float bodySize = apvts.getRawParameterValue("bodySize")->load();
     float bodyShape = apvts.getRawParameterValue("bodyShape")->load();
@@ -208,6 +223,7 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     float eqHighMidG = apvts.getRawParameterValue("eqHighMidGain")->load();
     float eqHigh = apvts.getRawParameterValue("eqHighGain")->load();
 
+    int   revType = (int)apvts.getRawParameterValue("reverbType")->load();
     float revMix = apvts.getRawParameterValue("reverbMix")->load() / 100.0f;
     float revDecay = apvts.getRawParameterValue("reverbDecay")->load() / 100.0f;
     float revSize = apvts.getRawParameterValue("reverbSize")->load();
@@ -228,6 +244,9 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     auto numSamples = buffer.getNumSamples();
     float maxAbs = 0.0f;
+    float inPeak = 0.0f;
+    float inSumSq = 0.0f;
+    float wetSumSq = 0.0f;
 
     const float* inL = (totalNumInputChannels > 0) ? buffer.getReadPointer(0) : nullptr;
     const float* inR = (totalNumInputChannels > 1) ? buffer.getReadPointer(1) : nullptr;
@@ -238,8 +257,14 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     if (inputMode == 4 && totalNumInputChannels >= 2) {
         // Mode 4: Stereo Discrete Processing
         for (int n = 0; n < numSamples; ++n) {
-            float sL = inL ? inL[n] : 0.0f;
-            float sR = inR ? inR[n] : 0.0f;
+            float rawL = (inL ? inL[n] : 0.0f) * inGainLin;
+            float rawR = (inR ? inR[n] : 0.0f) * inGainLin;
+
+            inPeak = std::max(inPeak, std::max(std::abs(rawL), std::abs(rawR)));
+            inSumSq += 0.5f * (rawL * rawL + rawR * rawR);
+
+            float sL = rawL;
+            float sR = rawR;
             float dummy1 = 0.0f, dummy2 = 0.0f;
 
             float l = 0.0f, r = 0.0f;
@@ -248,20 +273,25 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                                   quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
                                   eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
                                   width, bodyType, bodySize, bodyShape,
-                                  revMix, revDecay, revSize, revTone, gainLin);
+                                  revMix, revDecay, revSize, revTone, revType, gainLin);
             dspEngineRight.process(sR, dummy2, r,
                                    denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
                                    quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
                                    eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
                                    width, bodyType, bodySize, bodyShape,
-                                   revMix, revDecay, revSize, revTone, gainLin);
+                                   revMix, revDecay, revSize, revTone, revType, gainLin);
 
             float mid = 0.5f * (l + r);
             float side = 0.5f * (l - r) * width;
-            if (outL) outL[n] = mid + side;
-            if (outR) outR[n] = mid - side;
+            float outWetL = mid + side;
+            float outWetR = mid - side;
 
-            maxAbs = std::max(maxAbs, std::max(std::abs(l), std::abs(r)));
+            wetSumSq += 0.5f * (outWetL * outWetL + outWetR * outWetR);
+
+            if (outL) outL[n] = outWetL;
+            if (outR) outR[n] = outWetR;
+
+            maxAbs = std::max(maxAbs, std::max(std::abs(outWetL), std::abs(outWetR)));
         }
     } else {
         // Mono Acoustic Guitar Modes (Mode 0: In 1, Mode 1: In 2, Mode 2: Auto, Mode 3: Sum)
@@ -297,6 +327,10 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 }
             }
 
+            guitarMono *= inGainLin;
+            inPeak = std::max(inPeak, std::abs(guitarMono));
+            inSumSq += guitarMono * guitarMono;
+
             // Process mono acoustic guitar through fluid space cavity & stereo mic imager
             float l = 0.0f, r = 0.0f;
             dspEngineLeft.process(guitarMono, l, r,
@@ -304,7 +338,9 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                                   quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
                                   eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
                                   width, bodyType, bodySize, bodyShape,
-                                  revMix, revDecay, revSize, revTone, gainLin);
+                                  revMix, revDecay, revSize, revTone, revType, gainLin);
+
+            wetSumSq += 0.5f * (l * l + r * r);
 
             if (totalNumOutputChannels >= 2) {
                 if (outL) outL[n] = l;
@@ -314,6 +350,54 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             }
 
             maxAbs = std::max(maxAbs, std::max(std::abs(l), std::abs(r)));
+        }
+    }
+
+    // 1. Update Input RMS & Peak Ballistics for UI Telemetry Meter
+    float inRms = std::sqrt(inSumSq / (float)std::max(1, numSamples));
+    float inRmsDb = 20.0f * std::log10(std::max(1e-5f, inRms));
+    float inPeakDb = 20.0f * std::log10(std::max(1e-5f, inPeak));
+
+    float prevRms = currentInputRms.load();
+    currentInputRms.store((inRmsDb > prevRms) ? (prevRms * 0.25f + inRmsDb * 0.75f) : (prevRms * 0.90f + inRmsDb * 0.10f));
+
+    float prevPeak = currentInputPeak.load();
+    currentInputPeak.store((inPeakDb > prevPeak) ? inPeakDb : (prevPeak * 0.88f + inPeakDb * 0.12f));
+
+    // 2. Continuous Short-Term RMS Tracking for Level-Matched A/B Bypass
+    float wetRms = std::sqrt(wetSumSq / (float)std::max(1, numSamples));
+    dryRmsFiltered = dryRmsFiltered * 0.94f + inRms * 0.06f;
+    wetRmsFiltered = wetRmsFiltered * 0.94f + wetRms * 0.06f;
+
+    if (dryRmsFiltered > 1e-4f && wetRmsFiltered > 1e-4f) {
+        targetMatchedGain = std::clamp(wetRmsFiltered / dryRmsFiltered, 0.25f, 4.0f);
+    }
+    currentMatchedGain.store(targetMatchedGain);
+
+    // 3. Level-Matched Master Bypass Execution (True Tone A/B Comparison)
+    if (masterBypass) {
+        float matchG = targetMatchedGain;
+        for (int n = 0; n < numSamples; ++n) {
+            float dryOutL = 0.0f, dryOutR = 0.0f;
+            if (inputMode == 4 && totalNumInputChannels >= 2) {
+                dryOutL = (inL ? inL[n] : 0.0f) * inGainLin * matchG;
+                dryOutR = (inR ? inR[n] : 0.0f) * inGainLin * matchG;
+            } else {
+                float rawMono = 0.0f;
+                if (totalNumInputChannels == 1) {
+                    rawMono = inL ? inL[n] : 0.0f;
+                } else if (totalNumInputChannels >= 2) {
+                    rawMono = ((inL ? inL[n] : 0.0f) + (inR ? inR[n] : 0.0f)) * 0.7071f;
+                }
+                dryOutL = dryOutR = rawMono * inGainLin * matchG;
+            }
+
+            if (totalNumOutputChannels >= 2) {
+                if (outL) outL[n] = dryOutL;
+                if (outR) outR[n] = dryOutR;
+            } else if (totalNumOutputChannels == 1) {
+                if (outL) outL[n] = 0.5f * (dryOutL + dryOutR);
+            }
         }
     }
 

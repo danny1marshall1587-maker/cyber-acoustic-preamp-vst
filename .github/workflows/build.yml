@@ -94,21 +94,31 @@ jobs:
           name: "Cyber Acoustic Preamp ${{ github.ref_name }}"
           tag_name: ${{ github.ref_name }}
           body: |
-            # Cyber Acoustic Preamp ${{ github.ref_name }} — Acoustic Openness & Close-Mic Radiation Release
+            # Cyber Acoustic Preamp ${{ github.ref_name }} — Mandolin Cavity, Multi-Algorithm Reverb & Level-Matched Bypass Release
             
-            **Ultimate Fluid Space Acoustic Guitar Pickup Preamp & Cavity Physics**
+            **Ultimate Fluid Space Acoustic Guitar & Mandolin Pickup Preamp & Cavity Physics**
             *Free and Open Source Standalone Application and VST3 / AU / LV2 Plugin*
             
-            ### What's New in v1.4.0:
+            ### What's New in v1.5.0:
+            - **Multi-Algorithm Fluid Dynamics Reverb Space**:
+              - **Studio Room (Type 0)**: Intimate, warm wooden chamber for authentic studio ambiance.
+              - **Concert Hall (Type 1)**: Expansive, lush acoustic space ($5.10\times$ delay scaling, slower high-frequency absorption, increased pre-diffusion) for grand auditorium and cathedral acoustics.
+              - **Vintage Plate (Type 2)**: Dense, high-frequency plate dispersion ($1.42\times$ time scale, $160\text{ Hz}$ high-pass conditioning, shimmering $14\text{ kHz}$ decay) for classic 1970s studio acoustic tracks.
+            - **F-Style Mandolin (F-5) Acoustic Cavity Model**:
+              - Mathematically modeled for carved spruce soundboard, flamed maple back/sides, twin f-holes, and floating ebony bridge assembly.
+              - Coupled Christensen parameters: Helmholtz air resonance $A_0 = 285\text{ Hz}$, soundboard mode $T_1 = 350\text{ Hz}$, shape factor $\sigma = 0.15$.
+              - Includes **Preset 10: Bluegrass F-5 Mandolin Chop** (custom proximity, sheen, and body chop tuning).
+            - **Level-Matched Master Bypass ("A/B MATCHED BYPASS")**:
+              - True loudness-compensated comparison between processed acoustic tone and raw pickup signal ($0.25\times \dots 4.0\times$ short-term RMS tracking), eliminating loudness bias during critical tone evaluation.
+            - **Input Gain Staging & RMS Sweet-Spot Meter**:
+              - Smooth input gain knob ($-24\text{ dB} \dots +24\text{ dB}$).
+              - Live dual-ballistic meter showing RMS bar and Peak needle with clear green target zone (`-24 dBFS` to `-12 dBFS`) indicating optimal converter headroom and fluid non-linearity drive.
             - **Fluid Air & Close-Mic Radiation Engine (`FluidAirMicDSP`)**:
               - **Tri-Point Wavefront Radiation Interference Matrix**: Models the acoustic path interference between the Direct String Wave ($t_0$), Top-Plate Wood Wave ($\Delta t_1 \approx 0.28 - 0.63\text{ ms}$), and Soundhole Helmholtz Piston Wave ($\Delta t_2 \approx 0.85 - 1.60\text{ ms}$). Phase-inverted soundhole subtraction naturally eliminates the boxy $200 - 400\text{ Hz}$ "cardboard box" frequency region that plagues under-saddle pickups.
               - **Free-Air Particle Acceleration Sheen (`micAirSheen`)**: Extracts the 2nd discrete derivative of displacement ($A_{\text{air}}[n] = v[n] - v[n-1]$) with air viscosity damping for uncompressed, velvety $10\text{ kHz}+$ condenser breath that completely bypasses wood fiber damping.
               - **Close-Mic Pressure-Gradient Proximity Effect (`closeMicProximity`)**: Models the natural $90 - 130\text{ Hz}$ chest warmth of a small-diaphragm condenser capsule placed 3 to 6 inches from the 12th fret.
               - **Dual-Stage All-Pass Boundary Acoustic Diffraction**: Simulates 3D acoustic wave wrapping around the curved bout with soft capsule compliance.
               - **Constant-Time Padé Approximant (`FluidMath::fast_tanh`)**: Replaces standard `std::tanh` with a 3-cycle branchless rational approximant ($x(27 + x^2)/(27 + 9x^2)$), guaranteeing zero CPU spikes and zero latency degradation under any signal level.
-            - **New Dedicated Studio Presets**:
-              - **Takamine Piezo Rescue**: Maximum soundhole/top-plate phase relief ($90\%$ Openness, $75\%$ Sheen) to completely eradicate plastic $300\text{ Hz}$ pickup boxiness.
-              - **Martin D-45 Deep Air**: Full dreadnought chest weight ($80\%$ Proximity) with sparkling condenser breath ($85\%$ Sheen, $88\%$ Openness).
             - **10-Band Cyber-Denoiser PRO (`AcousticCyberDenoiser`)**:
               - 10-band zero-latency complementary filter bank (60 Hz, 150 Hz, 400 Hz, 800 Hz, 1.5 kHz, 3 kHz, 5 kHz, 8 kHz, 12 kHz) with perfect bit-accurate reconstruction.
               - Spectral subtraction with non-zero floor ($0.08$) ensuring acoustic decay tails sustain naturally into -inf dBFS with zero squelch or gating.
@@ -118,14 +128,10 @@ jobs:
               - Low-Mid Parametric Boxiness Cut (200–1000 Hz, ±12 dB) to surgically eliminate piezo cardboard honk.
               - High-Mid Parametric String Articulation (1.5–6.5 kHz, ±12 dB) for fingerpicking definition and pick clarity.
               - Air Glass High Shelf (9.5 kHz, ±12 dB) for crystalline sheen and studio gloss.
-            - **Pure Fluid Dynamics Reverb Space (`FluidReverbSpace`)**:
-              - Integrated 432 Hz period ladder Hadamard FDN reverb with Abbey Road send filters, 12AT7 tube driver, dual allpass diffusers, and corner eddy boundary turbulence.
             - **High-Performance ASIO Support (Windows)**:
               - Native Steinberg ASIO driver backend (`JUCE_ASIO=1`) and WASAPI Exclusive support (`JUCE_WASAPI_EXCLUSIVE=1`) for sub-3ms ultra-low latency.
             - **Dedicated Mono Input Routing**:
               - 1-tap input selector with 5 modes (`Mono In 1`, `Mono In 2`, `Auto-Detect Active`, `Stereo Sum`, `Stereo Discrete`).
-            - **Enhanced 4-Column Studio Console UI**:
-              - Expanded 1120x680 resizable layout with dedicated columns for D-Noise & Transducer, Fluid Acoustic Cavity & Air Mic, Studio 4-Band EQ, and Reverb & Master.
             
             ### Included Packages:
             - **Windows x64**: Standalone (.exe with ASIO) + VST3 + LV2

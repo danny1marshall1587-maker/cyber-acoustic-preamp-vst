@@ -51,10 +51,23 @@ public:
         g.strokePath(guitarBody, juce::PathStrokeType(1.8f));
 
         // 3. Soundhole / F-holes & Rosette
-        if (currentBodyType == 6) {
-            // Archtop with twin f-holes
-            drawFHole(g, center.x - w * 0.28f, center.y - h * 0.05f, h * 0.35f, false);
-            drawFHole(g, center.x + w * 0.28f, center.y - h * 0.05f, h * 0.35f, true);
+        if (currentBodyType == 6 || currentBodyType == 8) {
+            // Archtop & F-Style Mandolin with twin f-holes
+            float fLen = (currentBodyType == 8) ? h * 0.28f : h * 0.35f;
+            float fOffset = (currentBodyType == 8) ? w * 0.24f : w * 0.28f;
+            drawFHole(g, center.x - fOffset, center.y - h * 0.05f, fLen, false);
+            drawFHole(g, center.x + fOffset, center.y - h * 0.05f, fLen, true);
+
+            // Floating Bridge Assembly
+            float bridgeW = (currentBodyType == 8) ? w * 0.32f : w * 0.45f;
+            float bridgeH = h * 0.065f;
+            float bridgeY = center.y + h * 0.18f;
+            g.setColour(juce::Colour(0xff120d09)); // Ebony bridge
+            g.fillRoundedRectangle(center.x - bridgeW * 0.5f, bridgeY, bridgeW, bridgeH, 2.5f);
+            // Thumbwheels / Bone insert
+            g.setColour(juce::Colour(0xffd4974f));
+            g.fillEllipse(center.x - bridgeW * 0.35f, bridgeY + 2.0f, 4.0f, 4.0f);
+            g.fillEllipse(center.x + bridgeW * 0.35f - 4.0f, bridgeY + 2.0f, 4.0f, 4.0f);
         } else {
             // Round / Oval Soundhole
             float holeRadius = (currentBodyType == 7) ? w * 0.16f : w * 0.19f;
@@ -119,6 +132,23 @@ private:
     void createGuitarPath(juce::Path& p, float cx, float cy, float w, float h, int type, float shape) {
         float halfW = w * 0.5f;
         float halfH = h * 0.5f;
+
+        if (type == 8) { // F-Style Mandolin (Compact body with upper scroll horn and points)
+            float mHalfW = halfW * 0.85f;
+            float mHalfH = halfH * 0.85f;
+            p.startNewSubPath(cx, cy - mHalfH);
+            // Right upper scroll / point
+            p.lineTo(cx + mHalfW * 0.65f, cy - mHalfH * 0.95f);
+            p.lineTo(cx + mHalfW * 0.92f, cy - mHalfH * 0.70f); // Upper Point
+            p.cubicTo(cx + mHalfW * 0.80f, cy - mHalfH * 0.35f, cx + mHalfW, cy + mHalfH * 0.15f, cx + mHalfW * 0.90f, cy + mHalfH * 0.75f);
+            p.cubicTo(cx + mHalfW * 0.50f, cy + mHalfH, cx + mHalfW * 0.20f, cy + mHalfH, cx, cy + mHalfH); // Bottom teardrop
+            p.cubicTo(cx - mHalfW * 0.20f, cy + mHalfH, cx - mHalfW * 0.50f, cy + mHalfH, cx - mHalfW * 0.90f, cy + mHalfH * 0.75f);
+            p.cubicTo(cx - mHalfW, cy + mHalfH * 0.15f, cx - mHalfW * 0.80f, cy - mHalfH * 0.35f, cx - mHalfW * 1.15f, cy - mHalfH * 0.70f); // Left Scroll Horn
+            p.cubicTo(cx - mHalfW * 1.05f, cy - mHalfH * 0.90f, cx - mHalfW * 0.55f, cy - mHalfH * 1.05f, cx, cy - mHalfH);
+            p.closeSubPath();
+            return;
+        }
+
         float waistWidth = halfW * (0.68f - 0.15f * shape);
         float upperWidth = halfW * (0.82f + 0.10f * shape);
         float lowerWidth = halfW;
@@ -168,6 +198,7 @@ private:
             case 5: return "Classical Nylon";
             case 6: return "Acoustic Jazz Archtop";
             case 7: return "Selmer Maccaferri";
+            case 8: return "F-Style Mandolin (F-5)";
             default: return "Custom Acoustic";
         }
     }
@@ -182,6 +213,7 @@ private:
             case 5: return "Cavity: 16.8L | A0: 102Hz | T1: 218Hz";
             case 6: return "Cavity: 19.0L | A0: 138Hz | T1: 225Hz";
             case 7: return "Cavity: 18.5L | A0: 118Hz | T1: 215Hz";
+            case 8: return "Cavity: 2.2L | A0: 285Hz | T1: 350Hz";
             default: return "Fluid Space Physical Model";
         }
     }

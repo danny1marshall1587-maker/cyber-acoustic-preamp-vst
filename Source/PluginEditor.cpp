@@ -16,6 +16,7 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
     presetSelector.addItem("Preset: Gypsy Django Selmer Lead", 7);
     presetSelector.addItem("Preset: Takamine Piezo Rescue", 8);
     presetSelector.addItem("Preset: Martin D-45 Deep Air", 9);
+    presetSelector.addItem("Preset: Bluegrass F-5 Mandolin Chop", 10);
     presetSelector.setSelectedId(1, juce::dontSendNotification);
     presetSelector.onChange = [this]() {
         loadPreset(presetSelector.getSelectedId());
@@ -52,6 +53,17 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
         b.setColour(juce::ToggleButton::tickDisabledColourId, juce::Colour(0xff55483d));
         addAndMakeVisible(b);
     };
+
+    // 0. Header Staging & Level-Matched A/B Bypass
+    setupRotary(inputGainSlider, inputGainLabel, "IN GAIN", " dB");
+    inputGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "inputGain", inputGainSlider);
+
+    addAndMakeVisible(inputMeter);
+
+    setupToggle(masterBypassButton, "A/B MATCHED BYPASS");
+    masterBypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        audioProcessor.apvts, "masterBypass", masterBypassButton);
 
     // 1c. 10-Band Cyber-Denoiser PRO
     setupRotary(denoiseAmountSlider, denoiseAmountLabel, "D-NOISE", "%");
@@ -93,7 +105,8 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
         "Parlor (Single-0)",
         "Classical Nylon",
         "Acoustic Archtop",
-        "Selmer Maccaferri"
+        "Selmer Maccaferri",
+        "F-Style Mandolin (F-5)"
     }, 1);
     bodyTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         audioProcessor.apvts, "bodyType", bodyTypeBox);
@@ -151,6 +164,11 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
         audioProcessor.apvts, "eqHighGain", eqHighGainSlider);
 
     // 4. Fluid Reverb Space (From Euphoria Amp)
+    addAndMakeVisible(reverbTypeBox);
+    reverbTypeBox.addItemList({ "Studio Room", "Concert Hall", "Vintage Plate" }, 1);
+    reverbTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        audioProcessor.apvts, "reverbType", reverbTypeBox);
+
     setupRotary(reverbMixSlider, reverbMixLabel, "REVERB MIX", "%");
     reverbMixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.apvts, "reverbMix", reverbMixSlider);
@@ -213,6 +231,7 @@ void CyberAcousticEditor::timerCallback()
     float audioLevel = audioProcessor.getCurrentAudioLevel();
 
     visualizer.setParameters(bodyType, bodySize, bodyShape, audioLevel);
+    inputMeter.setLevels(audioProcessor.getInputRmsDb(), audioProcessor.getInputPeakDb());
 }
 
 void CyberAcousticEditor::loadPreset(int id)
@@ -232,6 +251,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("eqLowGain", 1.0f); setVal("eqLowMidFreq", 450.0f); setVal("eqLowMidGain", -2.5f);
             setVal("eqHighMidFreq", 3200.0f); setVal("eqHighMidGain", 1.5f); setVal("eqHighGain", 2.0f);
             setVal("stereoWidth", 110.0f);
+            setVal("reverbType", 0);
             setVal("reverbMix", 18.0f); setVal("reverbDecay", 35.0f); setVal("reverbSize", 1.0f); setVal("reverbTone", 6000.0f);
             break;
         case 2: // Modern Fingerstyle OM
@@ -243,6 +263,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("eqLowGain", 0.5f); setVal("eqLowMidFreq", 500.0f); setVal("eqLowMidGain", -3.0f);
             setVal("eqHighMidFreq", 3800.0f); setVal("eqHighMidGain", 2.5f); setVal("eqHighGain", 3.5f);
             setVal("stereoWidth", 130.0f);
+            setVal("reverbType", 0);
             setVal("reverbMix", 26.0f); setVal("reverbDecay", 55.0f); setVal("reverbSize", 1.25f); setVal("reverbTone", 7500.0f);
             break;
         case 3: // Cavernous J-200 Strumming
@@ -254,6 +275,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("eqLowGain", 2.5f); setVal("eqLowMidFreq", 380.0f); setVal("eqLowMidGain", -2.0f);
             setVal("eqHighMidFreq", 2800.0f); setVal("eqHighMidGain", 1.0f); setVal("eqHighGain", 2.0f);
             setVal("stereoWidth", 140.0f);
+            setVal("reverbType", 1); // Concert Hall
             setVal("reverbMix", 32.0f); setVal("reverbDecay", 70.0f); setVal("reverbSize", 1.8f); setVal("reverbTone", 5000.0f);
             break;
         case 4: // Delta Blues Parlor
@@ -265,6 +287,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("eqLowGain", -2.0f); setVal("eqLowMidFreq", 650.0f); setVal("eqLowMidGain", 1.5f);
             setVal("eqHighMidFreq", 2400.0f); setVal("eqHighMidGain", 2.0f); setVal("eqHighGain", -1.0f);
             setVal("stereoWidth", 75.0f);
+            setVal("reverbType", 0);
             setVal("reverbMix", 12.0f); setVal("reverbDecay", 22.0f); setVal("reverbSize", 0.7f); setVal("reverbTone", 4500.0f);
             break;
         case 5: // Concert Classical Nylon
@@ -276,6 +299,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("eqLowGain", 1.5f); setVal("eqLowMidFreq", 400.0f); setVal("eqLowMidGain", -1.5f);
             setVal("eqHighMidFreq", 2600.0f); setVal("eqHighMidGain", 0.5f); setVal("eqHighGain", 1.0f);
             setVal("stereoWidth", 100.0f);
+            setVal("reverbType", 1); // Concert Hall
             setVal("reverbMix", 28.0f); setVal("reverbDecay", 60.0f); setVal("reverbSize", 1.4f); setVal("reverbTone", 6500.0f);
             break;
         case 6: // Acoustic Jazz Archtop
@@ -287,6 +311,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("eqLowGain", 1.0f); setVal("eqLowMidFreq", 550.0f); setVal("eqLowMidGain", 1.0f);
             setVal("eqHighMidFreq", 2200.0f); setVal("eqHighMidGain", -1.0f); setVal("eqHighGain", -2.5f);
             setVal("stereoWidth", 80.0f);
+            setVal("reverbType", 2); // Vintage Plate
             setVal("reverbMix", 16.0f); setVal("reverbDecay", 30.0f); setVal("reverbSize", 0.9f); setVal("reverbTone", 5500.0f);
             break;
         case 7: // Gypsy Django Selmer
@@ -298,6 +323,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("eqLowGain", -1.5f); setVal("eqLowMidFreq", 750.0f); setVal("eqLowMidGain", 2.5f);
             setVal("eqHighMidFreq", 3500.0f); setVal("eqHighMidGain", 3.0f); setVal("eqHighGain", 1.5f);
             setVal("stereoWidth", 90.0f);
+            setVal("reverbType", 2); // Vintage Plate
             setVal("reverbMix", 20.0f); setVal("reverbDecay", 38.0f); setVal("reverbSize", 1.0f); setVal("reverbTone", 7000.0f);
             break;
         case 8: // Takamine Piezo Rescue (Maximum Boxiness Elimination & Breath)
@@ -309,6 +335,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("eqLowGain", 0.5f); setVal("eqLowMidFreq", 400.0f); setVal("eqLowMidGain", -3.5f);
             setVal("eqHighMidFreq", 3000.0f); setVal("eqHighMidGain", 1.0f); setVal("eqHighGain", 2.5f);
             setVal("stereoWidth", 120.0f);
+            setVal("reverbType", 0);
             setVal("reverbMix", 22.0f); setVal("reverbDecay", 45.0f); setVal("reverbSize", 1.1f); setVal("reverbTone", 6500.0f);
             break;
         case 9: // Martin D-45 Deep Air (Huge Dreadnought Chest Warmth & Condenser Sparkle)
@@ -320,7 +347,20 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("eqLowGain", 2.0f); setVal("eqLowMidFreq", 420.0f); setVal("eqLowMidGain", -2.0f);
             setVal("eqHighMidFreq", 3400.0f); setVal("eqHighMidGain", 2.0f); setVal("eqHighGain", 3.0f);
             setVal("stereoWidth", 135.0f);
+            setVal("reverbType", 1); // Concert Hall
             setVal("reverbMix", 24.0f); setVal("reverbDecay", 50.0f); setVal("reverbSize", 1.3f); setVal("reverbTone", 7200.0f);
+            break;
+        case 10: // Bluegrass F-5 Mandolin Chop
+            setVal("bodyType", 8); setVal("bodySize", 0.75f); setVal("bodyShape", 0.15f);
+            setVal("denoiseAmount", 50.0f); setVal("denoiseThreshold", -82.0f);
+            setVal("quackReduction", 70.0f); setVal("bodyDepth", 50.0f); setVal("deFizz", 55.0f);
+            setVal("airShimmer", 45.0f);
+            setVal("micOpenness", 80.0f); setVal("micAirSheen", 45.0f); setVal("micProximity", 85.0f);
+            setVal("eqLowGain", 1.5f); setVal("eqLowMidFreq", 350.0f); setVal("eqLowMidGain", 2.0f);
+            setVal("eqHighMidFreq", 3200.0f); setVal("eqHighMidGain", 1.0f); setVal("eqHighGain", 0.5f);
+            setVal("stereoWidth", 115.0f);
+            setVal("reverbType", 0);
+            setVal("reverbMix", 16.0f); setVal("reverbDecay", 28.0f); setVal("reverbSize", 0.85f); setVal("reverbTone", 6500.0f);
             break;
     }
 }
@@ -334,23 +374,23 @@ void CyberAcousticEditor::paint(juce::Graphics& g)
     g.fillAll();
 
     // Top Header Banner
-    auto headerArea = getLocalBounds().removeFromTop(56);
+    auto headerArea = getLocalBounds().removeFromTop(58);
     g.setColour(juce::Colour(0xff1f1c1a));
     g.fillRect(headerArea);
     g.setColour(juce::Colour(0xff38322e));
-    g.drawHorizontalLine(55, 0, (float)getWidth());
+    g.drawHorizontalLine(57, 0, (float)getWidth());
 
     // Title & Subtitle
     g.setColour(juce::Colour(0xffedd9be));
-    g.setFont(juce::Font(juce::FontOptions(18.0f)).withExtraKerningFactor(0.08f));
-    g.drawText("CYBER ACOUSTIC PREAMP", 20, 10, 320, 22, juce::Justification::left, false);
+    g.setFont(juce::Font(juce::FontOptions(17.0f)).withExtraKerningFactor(0.06f));
+    g.drawText("CYBER ACOUSTIC PREAMP", 18, 10, 240, 20, juce::Justification::left, false);
 
     g.setColour(juce::Colour(0xffa19284));
-    g.setFont(juce::FontOptions(10.5f));
-    g.drawText("Fluid Space Acoustic Cavity Physics, Close-Mic Radiation & 4-Band Studio EQ", 22, 32, 520, 16, juce::Justification::left, false);
+    g.setFont(juce::FontOptions(10.0f));
+    g.drawText("Fluid Space Acoustic Physics & Imager", 20, 30, 240, 16, juce::Justification::left, false);
 
     // Section Dividing Lines (4 Columns)
-    auto mainArea = getLocalBounds().reduced(14).withTrimmedTop(54);
+    auto mainArea = getLocalBounds().reduced(14).withTrimmedTop(56);
     float colW = mainArea.getWidth() / 4.0f;
 
     g.setColour(juce::Colour(0xff2d2825));
@@ -370,11 +410,31 @@ void CyberAcousticEditor::paint(juce::Graphics& g)
 void CyberAcousticEditor::resized()
 {
     auto area = getLocalBounds();
-    auto header = area.removeFromTop(56);
+    auto header = area.removeFromTop(58);
 
-    // Header controls: Input Selector & Preset Selector
-    presetSelector.setBounds(header.getRight() - 320, 14, 300, 28);
-    inputSelector.setBounds(header.getRight() - 560, 14, 225, 28);
+    // Header controls layout from right to left
+    int rightX = header.getRight() - 14;
+
+    int presetW = std::clamp((int)(header.getWidth() * 0.18f), 160, 220);
+    presetSelector.setBounds(rightX - presetW, 14, presetW, 28);
+    rightX -= (presetW + 8);
+
+    int inputW = std::clamp((int)(header.getWidth() * 0.14f), 130, 170);
+    inputSelector.setBounds(rightX - inputW, 14, inputW, 28);
+    rightX -= (inputW + 8);
+
+    int bypassW = std::clamp((int)(header.getWidth() * 0.13f), 125, 150);
+    masterBypassButton.setBounds(rightX - bypassW, 14, bypassW, 28);
+    rightX -= (bypassW + 8);
+
+    int meterW = std::clamp((int)(header.getWidth() * 0.14f), 130, 170);
+    inputMeter.setBounds(rightX - meterW, 14, meterW, 28);
+    rightX -= (meterW + 8);
+
+    int inGainW = 55;
+    auto inGainArea = juce::Rectangle<int>(rightX - inGainW, 4, inGainW, 50);
+    inputGainLabel.setBounds(inGainArea.removeFromBottom(14));
+    inputGainSlider.setBounds(inGainArea);
 
     auto mainArea = area.reduced(14);
     int colW = mainArea.getWidth() / 4;
@@ -514,8 +574,13 @@ void CyberAcousticEditor::resized()
     auto col4 = mainArea.reduced(6);
     col4.removeFromTop(26);
 
+    // Reverb Type Selector (Studio Room / Concert Hall / Vintage Plate)
+    auto revTypeRow = col4.removeFromTop(26);
+    reverbTypeBox.setBounds(revTypeRow);
+    col4.removeFromTop(6);
+
     // Part A: Fluid Reverb Space (2x2 Grid)
-    auto revArea = col4.removeFromTop(185);
+    auto revArea = col4.removeFromTop(155);
     int revRowH = revArea.getHeight() / 2;
     auto revRow1 = revArea.removeFromTop(revRowH);
     auto revRow2 = revArea;

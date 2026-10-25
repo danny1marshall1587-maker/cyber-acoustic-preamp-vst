@@ -291,6 +291,7 @@ public:
             case 5: base_A0 = 102.0f; base_T1 = 218.0f; base_sigma = 0.35f; break; // Classical
             case 6: base_A0 = 138.0f; base_T1 = 225.0f; base_sigma = 0.18f; break; // Archtop
             case 7: base_A0 = 118.0f; base_T1 = 215.0f; base_sigma = 0.12f; break; // Selmer
+            case 8: base_A0 = 285.0f; base_T1 = 350.0f; base_sigma = 0.15f; break; // F-Style Mandolin (F-5)
             default: break;
         }
 
@@ -864,6 +865,7 @@ struct FluidReverbSpace {
         float curSize, float curShape,
         float sendLowCutHz, float sendHighCutHz,
         float dwellNorm, float mixNorm,
+        int reverbType,
         float sampleRate,
         float& outL, float& outR
     ) {
@@ -873,43 +875,74 @@ struct FluidReverbSpace {
             return;
         }
 
-        // 1. Abbey Road Pre-Tank Send Conditioning Filter
-        if (std::fabs(sendLowCutHz - lastLowCut) > 0.25f) {
-            lastLowCut = sendLowCutHz;
-            sendHp.setHighPass(std::clamp(sendLowCutHz, 20.0f, 1000.0f), 0.7071f, sampleRate);
+        // 1. Reverb Mode Conditioning (0: Room, 1: Hall, 2: Plate)
+        float effLowCut = sendLowCutHz;
+        float effHighCut = sendHighCutHz;
+        float diffCoeff1 = 0.55f;
+        float diffCoeff2 = 0.50f;
+        float timeScale = 2.85f;
+        float primeRatios[FDN_LINES] = { 1.000f, 1.4142f, 1.8371f, 2.3607f };
+        float fbBase = 0.50f, fbScale = 0.44f;
+        float dampBase = 0.20f, dampScale = 0.35f;
+
+        if (reverbType == 1) { // Concert Hall (Deep, Spacious, Lush Tail)
+            effLowCut = std::max(40.0f, sendLowCutHz * 0.65f);
+            effHighCut = std::min(16000.0f, sendHighCutHz);
+            diffCoeff1 = 0.65f;
+            diffCoeff2 = 0.58f;
+            timeScale = 5.10f;
+            primeRatios[0] = 1.000f; primeRatios[1] = 1.3415f;
+            primeRatios[2] = 1.7824f; primeRatios[3] = 2.4561f;
+            fbBase = 0.58f; fbScale = 0.39f;
+            dampBase = 0.10f; dampScale = 0.22f;
+        } else if (reverbType == 2) { // Vintage Plate (Dense Reflections, Steel Shimmer)
+            effLowCut = std::max(160.0f, sendLowCutHz * 1.5f); // Tight bass prevents plate thud
+            effHighCut = std::max(12000.0f, sendHighCutHz);    // Preserves metallic steel chime
+            diffCoeff1 = 0.72f;
+            diffCoeff2 = 0.68f;
+            timeScale = 1.42f; // Dense modal packing
+            primeRatios[0] = 1.000f; primeRatios[1] = 1.1892f;
+            primeRatios[2] = 1.4142f; primeRatios[3] = 1.6818f;
+            fbBase = 0.52f; fbScale = 0.43f;
+            dampBase = 0.15f; dampScale = 0.18f;
         }
-        if (std::fabs(sendHighCutHz - lastHighCut) > 1.0f) {
-            lastHighCut = sendHighCutHz;
-            sendLp.setLowPass(std::clamp(sendHighCutHz, 1500.0f, 18000.0f), 0.7071f, sampleRate);
+
+        // 2. Pre-Tank Send Conditioning Filter
+        if (std::fabs(effLowCut - lastLowCut) > 0.25f) {
+            lastLowCut = effLowCut;
+            sendHp.setHighPass(std::clamp(effLowCut, 20.0f, 1000.0f), 0.7071f, sampleRate);
+        }
+        if (std::fabs(effHighCut - lastHighCut) > 1.0f) {
+            lastHighCut = effHighCut;
+            sendLp.setLowPass(std::clamp(effHighCut, 1500.0f, 18000.0f), 0.7071f, sampleRate);
         }
 
         float inMono = (inL + inR) * 0.5f;
         float conditioned = sendLp.process(sendHp.process(inMono));
 
-        // 2. 12AT7 Tube Pre-Driver Stage (high-headroom glass driver)
+        // 3. 12AT7 Tube Pre-Driver Stage (high-headroom glass driver)
         float driveGain = 0.38f + dwellNorm * 0.42f;
-        float driven = std::tanh(conditioned * driveGain);
+        float driven = FluidMath::fast_tanh(conditioned * driveGain);
 
-        // 3. Dual Allpass Diffuser Stage
+        // 4. Dual Allpass Diffuser Stage
         float b1 = apBuf1[apIdx1];
-        float v1 = driven - 0.55f * b1;
-        float diff1 = b1 + 0.55f * v1;
+        float v1 = driven - diffCoeff1 * b1;
+        float diff1 = b1 + diffCoeff1 * v1;
         apBuf1[apIdx1] = v1;
         if (++apIdx1 >= 211) apIdx1 = 0;
 
         float b2 = apBuf2[apIdx2];
-        float v2 = diff1 - 0.50f * b2;
-        float diff2 = b2 + 0.50f * v2;
+        float v2 = diff1 - diffCoeff2 * b2;
+        float diff2 = b2 + diffCoeff2 * v2;
         apBuf2[apIdx2] = v2;
         if (++apIdx2 >= 379) apIdx2 = 0;
 
-        // 4. Multi-Chamber Waveguide Delay Reads (432 Hz Natural Acoustic Period)
+        // 5. Multi-Chamber Waveguide Delay Reads (432 Hz Natural Acoustic Period)
         float t432 = sampleRate / 432.0f; // ~111.1 samples at 48kHz
-        static const float s_primeRatios[FDN_LINES] = { 1.000f, 1.4142f, 1.8371f, 2.3607f };
 
         float readOutputs[FDN_LINES];
         for (int k = 0; k < FDN_LINES; ++k) {
-            float targetDelay = std::clamp(t432 * s_primeRatios[k] * curSize * 2.85f, 8.0f, (float)(BUF_SIZE - 16));
+            float targetDelay = std::clamp(t432 * primeRatios[k] * curSize * timeScale, 8.0f, (float)(BUF_SIZE - 16));
 
             // Hermite 4-point cubic fractional delay read (zero pitch clicks)
             float rPos = (float)writeIndices[k] - targetDelay;
@@ -931,35 +964,35 @@ struct FluidReverbSpace {
             readOutputs[k] = ((c3 * frac + c2) * frac + c1) * frac + c0;
         }
 
-        // 5. 4x4 Lossless Orthogonal Hadamard Feedback Matrix
+        // 6. 4x4 Lossless Orthogonal Hadamard Feedback Matrix
         float s0 = 0.5f * ( readOutputs[0] + readOutputs[1] + readOutputs[2] + readOutputs[3]);
         float s1 = 0.5f * ( readOutputs[0] - readOutputs[1] + readOutputs[2] - readOutputs[3]);
         float s2 = 0.5f * ( readOutputs[0] + readOutputs[1] - readOutputs[2] - readOutputs[3]);
         float s3 = 0.5f * ( readOutputs[0] - readOutputs[1] - readOutputs[2] + readOutputs[3]);
         float mixed[FDN_LINES] = { s0, s1, s2, s3 };
 
-        // 6. Fluid Boundary Dispersion & Corner Eddy Turbulence (Shape Modulation)
-        float feedbackFactor = 0.50f + 0.44f * dwellNorm;
-        float dampAlpha = 0.20f + 0.35f * (1.0f - curShape * 0.45f);
+        // 7. Fluid Boundary Dispersion & Corner Eddy Turbulence (Shape Modulation)
+        float feedbackFactor = fbBase + fbScale * dwellNorm;
+        float dampAlpha = dampBase + dampScale * (1.0f - curShape * 0.45f);
 
         for (int k = 0; k < FDN_LINES; ++k) {
             dampingLp[k] += dampAlpha * (mixed[k] - dampingLp[k]);
             float damped = dampingLp[k];
 
             // Corner eddy turbulence: x^2(1 - x) bounded non-linearity
-            float xNorm = std::tanh(damped);
+            float xNorm = FluidMath::fast_tanh(damped);
             float eddy = curShape * 0.12f * (xNorm * xNorm * (1.0f - xNorm));
-            float fbSignal = std::tanh(damped * feedbackFactor) - eddy;
+            float fbSignal = FluidMath::fast_tanh(damped * feedbackFactor) - eddy;
 
             delayBuffers[k][writeIndices[k]] = diff2 + fbSignal;
             if (++writeIndices[k] >= BUF_SIZE) writeIndices[k] = 0;
         }
 
-        // 7. Stereo Spatial Extraction
+        // 8. Stereo Spatial Extraction
         float wetL = 1.25f * (readOutputs[0] + readOutputs[2]);
         float wetR = 1.25f * (readOutputs[1] + readOutputs[3]);
 
-        // 8. Equal-Power Dry/Wet Blend
+        // 9. Equal-Power Dry/Wet Blend
         float mixAngle = mixNorm * 1.5707963f; // 0 .. pi/2
         float dryG = std::cos(mixAngle);
         float wetG = std::sin(mixAngle);
@@ -1020,6 +1053,7 @@ public:
                         float custom_size,     float custom_shape,
                         float reverb_mix,      float reverb_decay,
                         float reverb_size,     float reverb_tone,
+                        int   reverb_type,
                         float output_gain_linear) {
         // Stage 0: 10-Band Cyber-Denoiser PRO (Spectral Phase Subtraction)
         float s0 = denoiser.process(in_sample, denoise_amount, denoise_thresh_db,
@@ -1062,7 +1096,7 @@ public:
         // Stage 6: Pure Fluid Dynamics Reverb Space (From Euphoria Amp)
         float revL = dryL, revR = dryR;
         fluid_reverb.process(dryL, dryR, reverb_size, custom_shape, 80.0f, reverb_tone,
-                             reverb_decay, reverb_mix, sample_rate, revL, revR);
+                             reverb_decay, reverb_mix, reverb_type, sample_rate, revL, revR);
 
         out_left  = flush_denormal(revL * output_gain_linear);
         out_right = flush_denormal(revR * output_gain_linear);
