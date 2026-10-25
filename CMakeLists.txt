@@ -6,9 +6,9 @@ if(APPLE)
 endif()
 
 if(APPLE)
-    project(CyberAcousticPreamp VERSION 1.0.0 LANGUAGES CXX C OBJC OBJCXX)
+    project(CyberAcousticPreamp VERSION 1.1.0 LANGUAGES CXX C OBJC OBJCXX)
 else()
-    project(CyberAcousticPreamp VERSION 1.0.0 LANGUAGES CXX C)
+    project(CyberAcousticPreamp VERSION 1.1.0 LANGUAGES CXX C)
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
@@ -44,6 +44,7 @@ juce_add_plugin(CyberAcousticPreamp
     FORMATS ${PLUGIN_FORMATS}
     LV2URI "http://cyber-audio.co.uk/plugins/cyber-acoustic-preamp"
     PRODUCT_NAME "CyberAcousticPreamp"
+    VERSION "1.1.0"
     AU_DESCRIPTION "Fluid Space Acoustic Guitar Pickup Preamp"
 )
 
@@ -51,8 +52,10 @@ target_compile_definitions(CyberAcousticPreamp PRIVATE
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
+    $<$<PLATFORM_ID:Windows>:JUCE_ASIO=1>
     $<$<PLATFORM_ID:Windows>:JUCE_DIRECTSOUND=1>
     $<$<PLATFORM_ID:Windows>:JUCE_WASAPI=1>
+    $<$<PLATFORM_ID:Windows>:JUCE_WASAPI_EXCLUSIVE=1>
 )
 
 if(UNIX AND NOT APPLE)
