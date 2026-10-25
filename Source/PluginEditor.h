@@ -55,6 +55,23 @@ private:
     juce::Label bodyDepthLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bodyDepthAttachment;
 
+    // Controls: Pure Fluid Dynamics Reverb Space (From Euphoria Amp)
+    juce::Slider reverbMixSlider;
+    juce::Label reverbMixLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reverbMixAttachment;
+
+    juce::Slider reverbDecaySlider;
+    juce::Label reverbDecayLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reverbDecayAttachment;
+
+    juce::Slider reverbSizeSlider;
+    juce::Label reverbSizeLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reverbSizeAttachment;
+
+    juce::Slider reverbToneSlider;
+    juce::Label reverbToneLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reverbToneAttachment;
+
     // Controls: Stage Master & Feedback Killer
     juce::ToggleButton afd1Toggle;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> afd1Attachment;
