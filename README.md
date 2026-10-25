@@ -1,23 +1,27 @@
-# Cyber Acoustic Preamp v1.5.0
+# Cyber Acoustic Preamp v1.6.0
 ### Ultimate Fluid Space Acoustic Guitar Pickup Preamp & Cavity Physics
 **Free & Open Source Standalone App, VST3, AU, and LV2 Plugin for Windows, macOS, and Linux.**
 
 ---
 
-## What's New in v1.5.0
-- **Expanded Fluid Reverb Engine**:
-  - **Studio Room (Type 0)**: Natural, warm wooden room ambiance with intimate early reflections.
-  - **Concert Hall (Type 1)**: Expansive, lush acoustic space ($5.10\times$ delay scaling, slower high-frequency absorption, increased pre-diffusion) for grand auditorium and cathedral acoustics.
-  - **Vintage Plate (Type 2)**: Dense, high-frequency plate dispersion ($1.42\times$ time scale, $160\text{ Hz}$ high-pass conditioning, shimmering $14\text{ kHz}$ decay) for 1970s acoustic studio tracks.
+## What's New in v1.6.0
+- **World-Class Modulated Dual-Tank Acoustic Reverb Engine (Dattorro / Lexicon Topologies)**:
+  - Replaced basic FDN tank algorithms with a studio-grade, high-density Figure-of-Eight Dual-Tank Modulated Reverb Engine.
+  - **4-Stage Schroeder-Dattorro Input Allpass Diffusion**: Transient-shattering diffusers (228, 172, 610, 445 samples) disperse sharp acoustic pick strikes into dense acoustic wavefronts before tank entry, completely eliminating metallic flutter, twang, and spring-like ringing.
+  - **Dual Modulated Cross-Coupled Tanks**: Extended prime delay lines (7120, 5900, 7500, 5100 samples) cross-recirculate in a figure-of-eight topology, delivering ultra-high modal density ($> 10,000\text{ modes/sec}$).
+  - **Multi-Speed Hermite Cubic LFO Chorus Modulation**: Dual decorrelated LFOs continuously wander the eigenfrequencies of the tank, creating the signature lush, floating, cloud-like Lexicon 480L / EMT 140 tail with zero pitch clicks.
+  - **14-Tap Irrational Spatial Stereo Matrix**: Seven multi-taps extracted across both tanks produce complete left/right channel decorrelation ($r \approx 0$) for an immense, immersive 3D acoustic soundfield.
+  - **Three Studio Voicings**:
+    - **Studio Room (Type 0)**: Warm, intimate wooden chamber with rapid reflection buildup and natural acoustic wood absorption.
+    - **Concert Hall (Type 1)**: Majestic, cathedral-scale acoustic bloom with 24ms pre-delay, slow air absorption damping, and floating chorus tails ($T_{60}$ up to 12s).
+    - **Vintage Plate (Type 2)**: Classic EMT 140 steel plate with instant ultra-high diffusion, 180 Hz high-pass conditioning (zero low-end mud), and shimmering 14 kHz metallic highs.
 - **F-Style Mandolin (F-5) Cavity Model**:
-  - Mathematically derived for carved spruce top, flamed maple back/sides, twin f-holes, and floating ebony bridge.
   - Coupled Christensen parameters: Helmholtz air resonance $A_0 = 285\text{ Hz}$, soundboard mode $T_1 = 350\text{ Hz}$, shape factor $\sigma = 0.15$.
-  - Includes new factory preset **Preset 10: Bluegrass F-5 Mandolin Chop**.
+  - Includes dedicated factory **Preset 10: Bluegrass F-5 Mandolin Chop**.
 - **Level-Matched Master Bypass ("A/B MATCHED BYPASS")**:
-  - True loudness-compensated comparison between processed acoustic tone and raw pickup signal. Continuously tracks dry and wet short-term RMS, eliminating loudness bias so you hear the pure tone improvement.
+  - True loudness-compensated comparison between processed acoustic tone and raw pickup signal ($0.25\times \dots 4.0\times$ short-term RMS tracking).
 - **Input Gain Staging & RMS Sweet-Spot Meter**:
-  - Smooth input gain knob ($-24\text{ dB} \dots +24\text{ dB}$).
-  - Live dual-ballistic meter showing RMS bar and Peak needle with clear green target zone (`-24 dBFS` to `-12 dBFS`) indicating optimal converter headroom and fluid non-linearity drive.
+  - Smooth input gain knob ($-24\text{ dB} \dots +24\text{ dB}$) and live RMS bar / Peak needle meter with green target sweet spot (`-24 dBFS` to `-12 dBFS`).
 
 ---
 
@@ -27,7 +31,8 @@ Acoustic guitar pickups (especially under-saddle piezo transducers) suffer from 
 2. **"Transducer Fizz"**: Harsh, undamped mechanical contact vibrations between $4.5\text{ kHz}$ and $14\text{ kHz}$ that bypass the natural internal damping of spruce and cedar wood fibers.
 3. **"Cardboard Boxiness"**: Trapped soundboard resonance from listening directly at the bridge saddle without exterior air propagation, phase-inverted soundhole cancellation, or boundary acoustic diffraction.
 
-**Cyber Acoustic Preamp v1.5.0** resolves these mechanical discrepancies using physical fluid dynamics and exterior acoustic air radiation physics:
+**Cyber Acoustic Preamp v1.6.0** resolves these mechanical discrepancies using physical fluid dynamics and exterior acoustic air radiation physics:
+- **World-Class Modulated Dual-Tank Reverb Engine (`FluidReverbSpace`)**: Dattorro Figure-of-Eight dual-tank architecture with 4 input allpass diffusers, Hermite cubic modulated allpasses, 14-tap spatial stereo extraction, and Abbey Road send filtering for pristine studio reverb.
 - **Fluid Air & Close-Mic Radiation Engine (`FluidAirMicDSP`)**:
   - **Tri-Point Wavefront Radiation Interference Matrix**: Models the acoustic interference between the Direct String Wave ($t_0$), Top-Plate Wood Wave ($\Delta t_1 \approx 0.28 - 0.63\text{ ms}$), and Soundhole Helmholtz Piston Wave ($\Delta t_2 \approx 0.85 - 1.60\text{ ms}$). Subtracts a portion of the delayed soundhole wave from the top plate wave ($-\gamma_{\text{hole}}$), physically cancelling the boxy $200 - 400\text{ Hz}$ "cardboard box" frequency region that plagues under-saddle pickups.
   - **Free-Air Particle Acceleration Sheen (`micAirSheen`)**: Computes the discrete second derivative of surface velocity ($A_{\text{air}}[n] = v[n] - v[n-1]$) with air viscosity low-pass damping, creating silky, uncompressed $10\text{ kHz}+$ condenser microphone breath that completely bypasses heavy soundboard wood damping.
@@ -42,7 +47,6 @@ Acoustic guitar pickups (especially under-saddle piezo transducers) suffer from 
   - **Low-Mid Boxiness Cut**: $200 - 1000\text{ Hz}, \pm 12\text{ dB}$, surgically scooping out the hollow "cardboard" honk typical of acoustic guitar pickups.
   - **High-Mid String Articulation**: $1.5 - 6.5\text{ kHz}, \pm 12\text{ dB}$, bringing out fingerpicking separation, pick definition, and acoustic chime.
   - **Air Glass Shelf**: $9.5\text{ kHz}, \pm 12\text{ dB}$, adding silky acoustic gloss and crystalline high-end sheen without harsh piezo brittle sizzle.
-- **Pure Fluid Dynamics Reverb Space (`FluidReverbSpace`)**: Integrated from the Euphoria Amp engine with Abbey Road low/high-cut send filters, 12AT7 tube driver, dual allpass diffusers, 4x4 Hadamard feedback delay network (scaled along the 432 Hz natural period ladder), switchable Studio Room, Concert Hall, and Vintage Plate algorithms, and corner eddy boundary turbulence.
 - **High-Performance Low-Latency ASIO**: Standalone application on Windows includes native Steinberg ASIO driver backend (`JUCE_ASIO=1`) and WASAPI Exclusive support (`JUCE_WASAPI_EXCLUSIVE=1`) for sub-3ms ultra-low round-trip latency.
 - **Dedicated Mono Input Routing**: Built-in 1-tap input selector with 5 modes (Mono In 1, Mono In 2, Auto-Detect Active, Stereo Sum, Stereo Discrete), accurately routing single-pickup guitars from any interface channel into the 3D stereo room imager without comb-filtering or volume drops.
 - **Smart De-Fizz & Flexural Phase Smear (`SmartAcousticDeFizz`)**: A 4-stage allpass dispersion network emulates transverse wave propagation across wood grain ($c_{\text{flex}} \propto \sqrt{\omega}$), while a 4th-order (24 dB/oct) Linkwitz-Riley crossover dynamically clamps harsh contact fizz during pick strikes while retaining crystalline air shimmer on sustained chords.

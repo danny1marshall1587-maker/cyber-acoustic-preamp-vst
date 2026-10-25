@@ -826,38 +826,149 @@ public:
     }
 };
 
+// ============================================================================
+// World-Class Modulated Dual-Tank Acoustic Reverb Space (Dattorro / Lexicon Topologies)
+// ============================================================================
 struct FluidReverbSpace {
-    static constexpr int FDN_LINES = 4;
-    static constexpr int BUF_SIZE = 16384;
+    // 1. Pre-Delay buffer (up to 170 ms at 48kHz = 8192 samples)
+    static constexpr int PREDLY_SIZE = 8192;
+    float preDelayBuf[PREDLY_SIZE] = {};
+    int preDelayW = 0;
 
-    float delayBuffers[FDN_LINES][BUF_SIZE] = {};
-    int writeIndices[FDN_LINES] = {};
+    // 2. Four Cascaded Schroeder-Dattorro Input Allpass Diffusers (Transient Shattering)
+    static constexpr int IN_AP1_SIZE = 1024;
+    static constexpr int IN_AP2_SIZE = 1024;
+    static constexpr int IN_AP3_SIZE = 2048;
+    static constexpr int IN_AP4_SIZE = 2048;
+    float inApBuf1[IN_AP1_SIZE] = {};
+    float inApBuf2[IN_AP2_SIZE] = {};
+    float inApBuf3[IN_AP3_SIZE] = {};
+    float inApBuf4[IN_AP4_SIZE] = {};
+    int inApIdx1 = 0, inApIdx2 = 0, inApIdx3 = 0, inApIdx4 = 0;
 
+    // 3. Tank Left Buffers (Figure-of-Eight Branch A)
+    static constexpr int TANK_MAP_SIZE = 4096;
+    static constexpr int TANK_DEL_SIZE = 16384;
+    static constexpr int TANK_AP2_SIZE = 8192;
+
+    float tankL_mapBuf[TANK_MAP_SIZE] = {};
+    int tankL_mapW = 0;
+    float tankL_del1Buf[TANK_DEL_SIZE] = {};
+    int tankL_del1W = 0;
+    float tankL_ap2Buf[TANK_AP2_SIZE] = {};
+    int tankL_ap2W = 0;
+    float tankL_del2Buf[TANK_DEL_SIZE] = {};
+    int tankL_del2W = 0;
+    float tankL_dampLp = 0.0f;
+    float crossFeedbackL = 0.0f;
+
+    // 4. Tank Right Buffers (Figure-of-Eight Branch B)
+    float tankR_mapBuf[TANK_MAP_SIZE] = {};
+    int tankR_mapW = 0;
+    float tankR_del1Buf[TANK_DEL_SIZE] = {};
+    int tankR_del1W = 0;
+    float tankR_ap2Buf[TANK_AP2_SIZE] = {};
+    int tankR_ap2W = 0;
+    float tankR_del2Buf[TANK_DEL_SIZE] = {};
+    int tankR_del2W = 0;
+    float tankR_dampLp = 0.0f;
+    float crossFeedbackR = 0.0f;
+
+    // Dual LFO Phase Accumulators for Multi-Speed Chorus Modulation
+    float lfoPhaseL = 0.0f;
+    float lfoPhaseR = 0.0f;
+
+    // Pre-Send Biquad Conditioning
     FluidBiquad sendHp;
     FluidBiquad sendLp;
     float lastLowCut = -1.0f;
     float lastHighCut = -1.0f;
 
-    float apBuf1[211] = {};
-    float apBuf2[379] = {};
-    int apIdx1 = 0;
-    int apIdx2 = 0;
-
-    float dampingLp[FDN_LINES] = {};
-
     void reset() {
-        for (int i = 0; i < FDN_LINES; ++i) {
-            std::fill(delayBuffers[i], delayBuffers[i] + BUF_SIZE, 0.0f);
-            writeIndices[i] = 0;
-            dampingLp[i] = 0.0f;
-        }
-        std::fill(apBuf1, apBuf1 + 211, 0.0f);
-        std::fill(apBuf2, apBuf2 + 379, 0.0f);
-        apIdx1 = apIdx2 = 0;
+        std::fill(preDelayBuf, preDelayBuf + PREDLY_SIZE, 0.0f);
+        preDelayW = 0;
+
+        std::fill(inApBuf1, inApBuf1 + IN_AP1_SIZE, 0.0f);
+        std::fill(inApBuf2, inApBuf2 + IN_AP2_SIZE, 0.0f);
+        std::fill(inApBuf3, inApBuf3 + IN_AP3_SIZE, 0.0f);
+        std::fill(inApBuf4, inApBuf4 + IN_AP4_SIZE, 0.0f);
+        inApIdx1 = inApIdx2 = inApIdx3 = inApIdx4 = 0;
+
+        std::fill(tankL_mapBuf, tankL_mapBuf + TANK_MAP_SIZE, 0.0f);
+        std::fill(tankL_del1Buf, tankL_del1Buf + TANK_DEL_SIZE, 0.0f);
+        std::fill(tankL_ap2Buf, tankL_ap2Buf + TANK_AP2_SIZE, 0.0f);
+        std::fill(tankL_del2Buf, tankL_del2Buf + TANK_DEL_SIZE, 0.0f);
+        tankL_mapW = tankL_del1W = tankL_ap2W = tankL_del2W = 0;
+        tankL_dampLp = 0.0f;
+        crossFeedbackL = 0.0f;
+
+        std::fill(tankR_mapBuf, tankR_mapBuf + TANK_MAP_SIZE, 0.0f);
+        std::fill(tankR_del1Buf, tankR_del1Buf + TANK_DEL_SIZE, 0.0f);
+        std::fill(tankR_ap2Buf, tankR_ap2Buf + TANK_AP2_SIZE, 0.0f);
+        std::fill(tankR_del2Buf, tankR_del2Buf + TANK_DEL_SIZE, 0.0f);
+        tankR_mapW = tankR_del1W = tankR_ap2W = tankR_del2W = 0;
+        tankR_dampLp = 0.0f;
+        crossFeedbackR = 0.0f;
+
+        lfoPhaseL = 0.0f;
+        lfoPhaseR = 0.0f;
+
         sendHp.reset();
         sendLp.reset();
         lastLowCut = -1.0f;
         lastHighCut = -1.0f;
+    }
+
+    // Linear fractional delay tap read helper
+    static inline float readDelayTap(const float* buffer, int bufSize, int writePos, float tapDelay) {
+        float rPos = (float)writePos - tapDelay;
+        while (rPos < 0.0f) rPos += (float)bufSize;
+        while (rPos >= (float)bufSize) rPos -= (float)bufSize;
+        int i0 = (int)rPos;
+        float frac = rPos - (float)i0;
+        int i1 = (i0 + 1) % bufSize;
+        return buffer[i0] + frac * (buffer[i1] - buffer[i0]);
+    }
+
+    // 4-point Hermite cubic fractional read for modulated allpass (glitch-free pitch shifting)
+    static inline float readDelayHermite(const float* buffer, int bufSize, int writePos, float delay) {
+        float rPos = (float)writePos - delay;
+        while (rPos < 0.0f) rPos += (float)bufSize;
+        while (rPos >= (float)bufSize) rPos -= (float)bufSize;
+        int i1 = (int)rPos;
+        float frac = rPos - (float)i1;
+        int i0 = (i1 - 1 + bufSize) % bufSize;
+        int i2 = (i1 + 1) % bufSize;
+        int i3 = (i1 + 2) % bufSize;
+
+        float y0 = buffer[i0], y1 = buffer[i1], y2 = buffer[i2], y3 = buffer[i3];
+        float c0 = y1;
+        float c1 = 0.5f * (y2 - y0);
+        float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+        float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+        return ((c3 * frac + c2) * frac + c1) * frac + c0;
+    }
+
+    // Standard Allpass step
+    static inline float processAllpass(float in, float* buf, int bufSize, int& idx, int delayLength, float g) {
+        int rIdx = idx - delayLength;
+        if (rIdx < 0) rIdx += bufSize;
+        float bufVal = buf[rIdx];
+        float vn = in + g * bufVal;
+        buf[idx] = vn;
+        float out = bufVal - g * vn;
+        if (++idx >= bufSize) idx = 0;
+        return out;
+    }
+
+    // Modulated Allpass step
+    static inline float processModAllpass(float in, float* buf, int bufSize, int& idx, float delayLength, float g) {
+        float bufVal = readDelayHermite(buf, bufSize, idx, delayLength);
+        float vn = in + g * bufVal;
+        buf[idx] = vn;
+        float out = bufVal - g * vn;
+        if (++idx >= bufSize) idx = 0;
+        return out;
     }
 
     inline void process(
@@ -875,36 +986,54 @@ struct FluidReverbSpace {
             return;
         }
 
-        // 1. Reverb Mode Conditioning (0: Room, 1: Hall, 2: Plate)
+        // 1. Algorithm Configuration (0: Studio Room, 1: Concert Hall, 2: Vintage Plate)
+        float fsScale = (sampleRate > 8000.0f) ? (sampleRate / 48000.0f) : 1.0f;
+        float preDelayMs = 0.0f;
+        float sizeScale = 1.0f;
+        float decayFeedback = 0.50f;
+        float lfoRateHz = 0.70f;
+        float lfoDepthSamp = 8.0f;
+        float g_inDiff1 = 0.75f, g_inDiff2 = 0.625f;
+        float g_map = 0.70f, g_ap2 = 0.50f;
         float effLowCut = sendLowCutHz;
         float effHighCut = sendHighCutHz;
-        float diffCoeff1 = 0.55f;
-        float diffCoeff2 = 0.50f;
-        float timeScale = 2.85f;
-        float primeRatios[FDN_LINES] = { 1.000f, 1.4142f, 1.8371f, 2.3607f };
-        float fbBase = 0.50f, fbScale = 0.44f;
-        float dampBase = 0.20f, dampScale = 0.35f;
 
-        if (reverbType == 1) { // Concert Hall (Deep, Spacious, Lush Tail)
-            effLowCut = std::max(40.0f, sendLowCutHz * 0.65f);
-            effHighCut = std::min(16000.0f, sendHighCutHz);
-            diffCoeff1 = 0.65f;
-            diffCoeff2 = 0.58f;
-            timeScale = 5.10f;
-            primeRatios[0] = 1.000f; primeRatios[1] = 1.3415f;
-            primeRatios[2] = 1.7824f; primeRatios[3] = 2.4561f;
-            fbBase = 0.58f; fbScale = 0.39f;
-            dampBase = 0.10f; dampScale = 0.22f;
-        } else if (reverbType == 2) { // Vintage Plate (Dense Reflections, Steel Shimmer)
-            effLowCut = std::max(160.0f, sendLowCutHz * 1.5f); // Tight bass prevents plate thud
-            effHighCut = std::max(12000.0f, sendHighCutHz);    // Preserves metallic steel chime
-            diffCoeff1 = 0.72f;
-            diffCoeff2 = 0.68f;
-            timeScale = 1.42f; // Dense modal packing
-            primeRatios[0] = 1.000f; primeRatios[1] = 1.1892f;
-            primeRatios[2] = 1.4142f; primeRatios[3] = 1.6818f;
-            fbBase = 0.52f; fbScale = 0.43f;
-            dampBase = 0.15f; dampScale = 0.18f;
+        if (reverbType == 0) {
+            // --- 0: STUDIO ROOM ---
+            // Warm, intimate wooden room with dense initial diffusion and natural acoustic absorption
+            preDelayMs = 0.0f;
+            sizeScale = 0.55f * std::clamp(curSize, 0.5f, 2.0f);
+            decayFeedback = 0.28f + 0.54f * dwellNorm; // RT60 ~ 0.4s to 2.4s
+            lfoRateHz = 1.15f;
+            lfoDepthSamp = 3.5f * fsScale; // gentle micro-turbulence
+            g_inDiff1 = 0.78f; g_inDiff2 = 0.68f; // fast early reflection buildup
+            g_map = 0.65f; g_ap2 = 0.55f;
+            effLowCut = std::max(65.0f, sendLowCutHz);
+            effHighCut = std::min(sendHighCutHz, 7200.0f); // warm natural room high-cut
+        } else if (reverbType == 1) {
+            // --- 1: CONCERT HALL ---
+            // Expansive, majestic Lexicon 480L-style hall with lush floating tail and cathedral depth
+            preDelayMs = 24.0f; // 24ms pre-delay gives acoustic guitar notes clean transient breathing room
+            sizeScale = 1.35f * std::clamp(curSize, 0.7f, 2.5f);
+            decayFeedback = 0.45f + 0.52f * dwellNorm; // RT60 ~ 1.8s to 12s
+            lfoRateHz = 0.65f;
+            lfoDepthSamp = 10.0f * fsScale; // lush chorus modulation breaks all resonances
+            g_inDiff1 = 0.70f; g_inDiff2 = 0.60f;
+            g_map = 0.70f; g_ap2 = 0.50f;
+            effLowCut = std::max(35.0f, sendLowCutHz * 0.6f); // full sub-body retention
+            effHighCut = sendHighCutHz;
+        } else if (reverbType == 2) {
+            // --- 2: VINTAGE PLATE (EMT 140) ---
+            // Ultra-dense steel plate with shimmering high-end dispersion, high density, tight bass
+            preDelayMs = 4.0f;
+            sizeScale = 0.85f * std::clamp(curSize, 0.6f, 2.0f);
+            decayFeedback = 0.35f + 0.60f * dwellNorm; // bright, long plate tail
+            lfoRateHz = 1.45f;
+            lfoDepthSamp = 6.0f * fsScale; // mechanical sheet metal dispersion
+            g_inDiff1 = 0.82f; g_inDiff2 = 0.72f; // immediate dense reflection onset
+            g_map = 0.75f; g_ap2 = 0.60f;
+            effLowCut = std::max(180.0f, sendLowCutHz * 1.8f); // authentic EMT 140 HPF removes low-end mud
+            effHighCut = std::max(10000.0f, sendHighCutHz);    // silvery plate shimmer
         }
 
         // 2. Pre-Tank Send Conditioning Filter
@@ -920,79 +1049,136 @@ struct FluidReverbSpace {
         float inMono = (inL + inR) * 0.5f;
         float conditioned = sendLp.process(sendHp.process(inMono));
 
-        // 3. 12AT7 Tube Pre-Driver Stage (high-headroom glass driver)
-        float driveGain = 0.38f + dwellNorm * 0.42f;
+        // 3. 12AT7 Tube Pre-Driver Stage (Gentle dynamic warmth)
+        float driveGain = 0.35f + dwellNorm * 0.35f;
         float driven = FluidMath::fast_tanh(conditioned * driveGain);
 
-        // 4. Dual Allpass Diffuser Stage
-        float b1 = apBuf1[apIdx1];
-        float v1 = driven - diffCoeff1 * b1;
-        float diff1 = b1 + diffCoeff1 * v1;
-        apBuf1[apIdx1] = v1;
-        if (++apIdx1 >= 211) apIdx1 = 0;
+        // 4. Pre-Delay
+        int predlySamples = std::clamp((int)(preDelayMs * 0.001f * sampleRate), 0, PREDLY_SIZE - 1);
+        preDelayBuf[preDelayW] = driven;
+        float pdSignal = readDelayTap(preDelayBuf, PREDLY_SIZE, preDelayW, (float)predlySamples);
+        if (++preDelayW >= PREDLY_SIZE) preDelayW = 0;
 
-        float b2 = apBuf2[apIdx2];
-        float v2 = diff1 - diffCoeff2 * b2;
-        float diff2 = b2 + diffCoeff2 * v2;
-        apBuf2[apIdx2] = v2;
-        if (++apIdx2 >= 379) apIdx2 = 0;
+        // 5. Four Cascaded Schroeder-Dattorro Input Allpass Diffusers
+        int d_ap1 = std::max(1, (int)(228.0f * fsScale));
+        int d_ap2 = std::max(1, (int)(172.0f * fsScale));
+        int d_ap3 = std::max(1, (int)(610.0f * fsScale));
+        int d_ap4 = std::max(1, (int)(445.0f * fsScale));
 
-        // 5. Multi-Chamber Waveguide Delay Reads (432 Hz Natural Acoustic Period)
-        float t432 = sampleRate / 432.0f; // ~111.1 samples at 48kHz
+        float ap1 = processAllpass(pdSignal, inApBuf1, IN_AP1_SIZE, inApIdx1, d_ap1, g_inDiff1);
+        float ap2 = processAllpass(ap1, inApBuf2, IN_AP2_SIZE, inApIdx2, d_ap2, g_inDiff1);
+        float ap3 = processAllpass(ap2, inApBuf3, IN_AP3_SIZE, inApIdx3, d_ap3, g_inDiff2);
+        float diffused = processAllpass(ap3, inApBuf4, IN_AP4_SIZE, inApIdx4, d_ap4, g_inDiff2);
 
-        float readOutputs[FDN_LINES];
-        for (int k = 0; k < FDN_LINES; ++k) {
-            float targetDelay = std::clamp(t432 * primeRatios[k] * curSize * timeScale, 8.0f, (float)(BUF_SIZE - 16));
+        // 6. LFO Multi-Phase Pitch Modulation
+        float lfoIncL = (lfoRateHz * 6.2831853f) / sampleRate;
+        float lfoIncR = (lfoRateHz * 1.272f * 6.2831853f) / sampleRate; // golden ratio spread
+        lfoPhaseL += lfoIncL;
+        if (lfoPhaseL >= 6.2831853f) lfoPhaseL -= 6.2831853f;
+        lfoPhaseR += lfoIncR;
+        if (lfoPhaseR >= 6.2831853f) lfoPhaseR -= 6.2831853f;
 
-            // Hermite 4-point cubic fractional delay read (zero pitch clicks)
-            float rPos = (float)writeIndices[k] - targetDelay;
-            while (rPos < 0.0f) rPos += (float)BUF_SIZE;
-            int iPos = (int)rPos;
-            float frac = rPos - (float)iPos;
+        float modL = std::sin(lfoPhaseL) * lfoDepthSamp;
+        float modR = std::cos(lfoPhaseR) * lfoDepthSamp;
 
-            int i0 = (iPos - 1 + BUF_SIZE) % BUF_SIZE;
-            int i1 = iPos % BUF_SIZE;
-            int i2 = (iPos + 1) % BUF_SIZE;
-            int i3 = (iPos + 2) % BUF_SIZE;
+        // 7. Scaled Tank Delay Parameters
+        float scale = fsScale * sizeScale;
+        float len_L_map = std::clamp(1080.0f * scale, 32.0f, (float)(TANK_MAP_SIZE - 64));
+        float len_L_del1 = std::clamp(7120.0f * scale, 32.0f, (float)(TANK_DEL_SIZE - 64));
+        int   len_L_ap2  = std::clamp((int)(2900.0f * scale), 16, TANK_AP2_SIZE - 32);
+        float len_L_del2 = std::clamp(5900.0f * scale, 32.0f, (float)(TANK_DEL_SIZE - 64));
 
-            float y0 = delayBuffers[k][i0], y1 = delayBuffers[k][i1];
-            float y2 = delayBuffers[k][i2], y3 = delayBuffers[k][i3];
-            float c0 = y1;
-            float c1 = 0.5f * (y2 - y0);
-            float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
-            float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
-            readOutputs[k] = ((c3 * frac + c2) * frac + c1) * frac + c0;
-        }
+        float len_R_map = std::clamp(1450.0f * scale, 32.0f, (float)(TANK_MAP_SIZE - 64));
+        float len_R_del1 = std::clamp(7500.0f * scale, 32.0f, (float)(TANK_DEL_SIZE - 64));
+        int   len_R_ap2  = std::clamp((int)(3700.0f * scale), 16, TANK_AP2_SIZE - 32);
+        float len_R_del2 = std::clamp(5100.0f * scale, 32.0f, (float)(TANK_DEL_SIZE - 64));
 
-        // 6. 4x4 Lossless Orthogonal Hadamard Feedback Matrix
-        float s0 = 0.5f * ( readOutputs[0] + readOutputs[1] + readOutputs[2] + readOutputs[3]);
-        float s1 = 0.5f * ( readOutputs[0] - readOutputs[1] + readOutputs[2] - readOutputs[3]);
-        float s2 = 0.5f * ( readOutputs[0] + readOutputs[1] - readOutputs[2] - readOutputs[3]);
-        float s3 = 0.5f * ( readOutputs[0] - readOutputs[1] - readOutputs[2] + readOutputs[3]);
-        float mixed[FDN_LINES] = { s0, s1, s2, s3 };
+        float dampAlpha = 1.0f - std::exp(-6.2831853f * effHighCut / sampleRate);
 
-        // 7. Fluid Boundary Dispersion & Corner Eddy Turbulence (Shape Modulation)
-        float feedbackFactor = fbBase + fbScale * dwellNorm;
-        float dampAlpha = dampBase + dampScale * (1.0f - curShape * 0.45f);
+        // 8. Dual Cross-Coupled Figure-of-Eight Feedback Loop
+        // Tank Left Input: Diffused audio + cross-feedback from Tank Right
+        float tankInL = diffused * 0.7071f + crossFeedbackR * decayFeedback;
+        float nodeL1 = processModAllpass(tankInL, tankL_mapBuf, TANK_MAP_SIZE, tankL_mapW, len_L_map + modL, g_map);
 
-        for (int k = 0; k < FDN_LINES; ++k) {
-            dampingLp[k] += dampAlpha * (mixed[k] - dampingLp[k]);
-            float damped = dampingLp[k];
+        tankL_del1Buf[tankL_del1W] = nodeL1;
+        int wL1 = tankL_del1W;
+        if (++tankL_del1W >= TANK_DEL_SIZE) tankL_del1W = 0;
+        float d1_outL = readDelayTap(tankL_del1Buf, TANK_DEL_SIZE, wL1, len_L_del1);
 
-            // Corner eddy turbulence: x^2(1 - x) bounded non-linearity
-            float xNorm = FluidMath::fast_tanh(damped);
-            float eddy = curShape * 0.12f * (xNorm * xNorm * (1.0f - xNorm));
-            float fbSignal = FluidMath::fast_tanh(damped * feedbackFactor) - eddy;
+        tankL_dampLp += dampAlpha * (d1_outL - tankL_dampLp);
+        float dampedL = tankL_dampLp;
 
-            delayBuffers[k][writeIndices[k]] = diff2 + fbSignal;
-            if (++writeIndices[k] >= BUF_SIZE) writeIndices[k] = 0;
-        }
+        // Corner eddy turbulence non-linearity (Fluid physical acoustics)
+        float xNormL = FluidMath::fast_tanh(dampedL);
+        float eddyL = curShape * 0.05f * (xNormL * xNormL * (1.0f - xNormL));
+        dampedL = FluidMath::fast_tanh(dampedL) - eddyL;
 
-        // 8. Stereo Spatial Extraction
-        float wetL = 1.25f * (readOutputs[0] + readOutputs[2]);
-        float wetR = 1.25f * (readOutputs[1] + readOutputs[3]);
+        float nodeL2 = processAllpass(dampedL, tankL_ap2Buf, TANK_AP2_SIZE, tankL_ap2W, len_L_ap2, g_ap2);
 
-        // 9. Equal-Power Dry/Wet Blend
+        tankL_del2Buf[tankL_del2W] = nodeL2;
+        int wL2 = tankL_del2W;
+        if (++tankL_del2W >= TANK_DEL_SIZE) tankL_del2W = 0;
+        float d2_outL = readDelayTap(tankL_del2Buf, TANK_DEL_SIZE, wL2, len_L_del2);
+        crossFeedbackL = d2_outL;
+
+        // Tank Right Input: Diffused audio + cross-feedback from Tank Left
+        float tankInR = diffused * 0.7071f + crossFeedbackL * decayFeedback;
+        float nodeR1 = processModAllpass(tankInR, tankR_mapBuf, TANK_MAP_SIZE, tankR_mapW, len_R_map + modR, g_map);
+
+        tankR_del1Buf[tankR_del1W] = nodeR1;
+        int wR1 = tankR_del1W;
+        if (++tankR_del1W >= TANK_DEL_SIZE) tankR_del1W = 0;
+        float d1_outR = readDelayTap(tankR_del1Buf, TANK_DEL_SIZE, wR1, len_R_del1);
+
+        tankR_dampLp += dampAlpha * (d1_outR - tankR_dampLp);
+        float dampedR = tankR_dampLp;
+
+        float xNormR = FluidMath::fast_tanh(dampedR);
+        float eddyR = curShape * 0.05f * (xNormR * xNormR * (1.0f - xNormR));
+        dampedR = FluidMath::fast_tanh(dampedR) - eddyR;
+
+        float nodeR2 = processAllpass(dampedR, tankR_ap2Buf, TANK_AP2_SIZE, tankR_ap2W, len_R_ap2, g_ap2);
+
+        tankR_del2Buf[tankR_del2W] = nodeR2;
+        int wR2 = tankR_del2W;
+        if (++tankR_del2W >= TANK_DEL_SIZE) tankR_del2W = 0;
+        float d2_outR = readDelayTap(tankR_del2Buf, TANK_DEL_SIZE, wR2, len_R_del2);
+        crossFeedbackR = d2_outR;
+
+        // 9. Multi-Tap Spatial Stereo Output Extraction (Zero correlation between L and R)
+        float tap_R1_1 = std::clamp(430.0f * scale, 1.0f, (float)(TANK_DEL_SIZE - 16));
+        float tap_R1_2 = std::clamp(3500.0f * scale, 1.0f, (float)(TANK_DEL_SIZE - 16));
+        float tap_R2_1 = std::clamp(3100.0f * scale, 1.0f, (float)(TANK_DEL_SIZE - 16));
+        float tap_Rap_1 = std::clamp(1400.0f * scale, 1.0f, (float)(TANK_AP2_SIZE - 16));
+        float tap_L1_1 = std::clamp(2400.0f * scale, 1.0f, (float)(TANK_DEL_SIZE - 16));
+        float tap_L2_1 = std::clamp(1900.0f * scale, 1.0f, (float)(TANK_DEL_SIZE - 16));
+        float tap_Lap_1 = std::clamp(2100.0f * scale, 1.0f, (float)(TANK_AP2_SIZE - 16));
+
+        float tap_L1_2 = std::clamp(480.0f * scale, 1.0f, (float)(TANK_DEL_SIZE - 16));
+        float tap_L1_3 = std::clamp(3700.0f * scale, 1.0f, (float)(TANK_DEL_SIZE - 16));
+        float tap_L2_2 = std::clamp(2800.0f * scale, 1.0f, (float)(TANK_DEL_SIZE - 16));
+        float tap_Lap_2 = std::clamp(1200.0f * scale, 1.0f, (float)(TANK_AP2_SIZE - 16));
+        float tap_R1_3 = std::clamp(2200.0f * scale, 1.0f, (float)(TANK_DEL_SIZE - 16));
+        float tap_R2_2 = std::clamp(2100.0f * scale, 1.0f, (float)(TANK_DEL_SIZE - 16));
+        float tap_Rap_2 = std::clamp(1900.0f * scale, 1.0f, (float)(TANK_AP2_SIZE - 16));
+
+        float wetL = 0.50f * readDelayTap(tankR_del1Buf, TANK_DEL_SIZE, wR1, tap_R1_1)
+                   + 0.42f * readDelayTap(tankR_del1Buf, TANK_DEL_SIZE, wR1, tap_R1_2)
+                   - 0.38f * readDelayTap(tankR_del2Buf, TANK_DEL_SIZE, wR2, tap_R2_1)
+                   + 0.32f * readDelayTap(tankR_ap2Buf,  TANK_AP2_SIZE, tankR_ap2W, tap_Rap_1)
+                   - 0.40f * readDelayTap(tankL_del1Buf, TANK_DEL_SIZE, wL1, tap_L1_1)
+                   - 0.35f * readDelayTap(tankL_del2Buf, TANK_DEL_SIZE, wL2, tap_L2_1)
+                   + 0.30f * readDelayTap(tankL_ap2Buf,  TANK_AP2_SIZE, tankL_ap2W, tap_Lap_1);
+
+        float wetR = 0.50f * readDelayTap(tankL_del1Buf, TANK_DEL_SIZE, wL1, tap_L1_2)
+                   + 0.42f * readDelayTap(tankL_del1Buf, TANK_DEL_SIZE, wL1, tap_L1_3)
+                   - 0.38f * readDelayTap(tankL_del2Buf, TANK_DEL_SIZE, wL2, tap_L2_2)
+                   + 0.32f * readDelayTap(tankL_ap2Buf,  TANK_AP2_SIZE, tankL_ap2W, tap_Lap_2)
+                   - 0.40f * readDelayTap(tankR_del1Buf, TANK_DEL_SIZE, wR1, tap_R1_3)
+                   - 0.35f * readDelayTap(tankR_del2Buf, TANK_DEL_SIZE, wR2, tap_R2_2)
+                   + 0.30f * readDelayTap(tankR_ap2Buf,  TANK_AP2_SIZE, tankR_ap2W, tap_Rap_2);
+
+        // 10. Equal-Power Dry/Wet Blend
         float mixAngle = mixNorm * 1.5707963f; // 0 .. pi/2
         float dryG = std::cos(mixAngle);
         float wetG = std::sin(mixAngle);
