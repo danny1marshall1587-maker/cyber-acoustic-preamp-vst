@@ -20,6 +20,159 @@ inline float bounded_tanh(float x) {
 }
 
 // ============================================================================
+// Stage 0: 10-Band Cyber-Denoiser PRO (Spectral Phase Subtraction)
+// ============================================================================
+class AcousticCyberDenoiser {
+public:
+    static constexpr int NUM_BANDS = 10;
+
+private:
+    float sample_rate = 48000.0f;
+    float mAttCoeff = 0.0f;
+    float mLevelAtt = 0.0f;
+    float mLevelRel = 0.0f;
+    float mHpF = 0.0f;
+    float mLpF_cut = 0.0f;
+    float mBCoeffs[9] = {};
+
+    float lpStates[9] = {};
+    float levelStates[NUM_BANDS] = {};
+    float currentGains[NUM_BANDS] = {};
+    float hpCutStat = 0.0f;
+    float lpCutStat = 0.0f;
+
+    float lastThreshDb = -999.0f;
+    float cachedLinThresh[NUM_BANDS] = {};
+    float floorVal = 0.08f; // Non-zero floor prevents gating on acoustic decays
+
+public:
+    AcousticCyberDenoiser() {
+        for (int i = 0; i < NUM_BANDS; ++i) {
+            currentGains[i] = 1.0f;
+        }
+    }
+
+    void init(float sr) {
+        sample_rate = sr > 0.0f ? sr : 48000.0f;
+        mAttCoeff = 1.0f - std::exp(-1.0f / (0.1f * sample_rate / 1000.0f));
+        mLevelAtt = 1.0f - std::exp(-1.0f / (2.0f * sample_rate / 1000.0f));
+        mLevelRel = 1.0f - std::exp(-1.0f / (60.0f * sample_rate / 1000.0f));
+
+        auto getCoeff = [this](float freq) {
+            return 1.0f - std::exp(-2.0f * (float)M_PI * freq / std::max(1.0f, sample_rate));
+        };
+
+        mHpF = getCoeff(40.0f);
+        mLpF_cut = getCoeff(18000.0f);
+
+        const float multi[9] = { 60.0f, 150.0f, 400.0f, 800.0f, 1500.0f, 3000.0f, 5000.0f, 8000.0f, 12000.0f };
+        for (int i = 0; i < 9; ++i) {
+            mBCoeffs[i] = std::min(0.99f, getCoeff(multi[i]));
+        }
+
+        reset();
+    }
+
+    void reset() {
+        for (int i = 0; i < 9; ++i) lpStates[i] = 0.0f;
+        for (int i = 0; i < NUM_BANDS; ++i) {
+            levelStates[i] = 0.0f;
+            currentGains[i] = 1.0f;
+        }
+        hpCutStat = 0.0f;
+        lpCutStat = 0.0f;
+        lastThreshDb = -999.0f;
+    }
+
+    inline float process(float inSample, float reductionNorm, float thresholdDb,
+                         bool harmonicShield, bool listenNoise) {
+        if (reductionNorm <= 0.001f && !listenNoise) {
+            return inSample;
+        }
+
+        // 1. High-Pass (40 Hz) and Low-Pass (18 kHz) DC/Sub & Ultrasonic conditioning
+        hpCutStat += (inSample - hpCutStat) * mHpF;
+        float s0 = inSample - hpCutStat;
+        lpCutStat += (s0 - lpCutStat) * mLpF_cut;
+        s0 = lpCutStat;
+
+        // 2. 10-Band Perfect Reconstruction Filter Bank
+        float b[NUM_BANDS];
+        float currentIn = s0;
+
+        lpStates[0] += (currentIn - lpStates[0]) * mBCoeffs[0];
+        b[0] = lpStates[0];
+
+        for (int i = 1; i < 9; ++i) {
+            lpStates[i] += (currentIn - lpStates[i]) * mBCoeffs[i];
+            b[i] = lpStates[i] - lpStates[i - 1];
+        }
+        b[9] = currentIn - lpStates[8];
+
+        // 3. Update Cached Linear Thresholds (Only when parameter changes)
+        if (std::abs(thresholdDb - lastThreshDb) > 0.05f) {
+            lastThreshDb = thresholdDb;
+            // Shaped threshold profile matching guitar pickup noise spectrum
+            static const float bandOffsets[NUM_BANDS] = {
+                -2.0f, 0.0f, +1.0f, +2.0f, +2.5f, +3.0f, +3.5f, +4.0f, +5.0f, +4.0f
+            };
+            for (int i = 0; i < NUM_BANDS; ++i) {
+                float db = std::clamp(thresholdDb + bandOffsets[i], -100.0f, -20.0f);
+                cachedLinThresh[i] = std::pow(10.0f, db / 20.0f);
+            }
+        }
+
+        // 4. Harmonic Shield for Acoustic Guitar Fundamentals
+        float fundamentalActivity = 0.0f;
+        if (harmonicShield) {
+            for (int fBand = 1; fBand <= 3; ++fBand) {
+                float rf = levelStates[fBand];
+                float rawG = 1.0f - (cachedLinThresh[fBand] / (rf + 1e-9f));
+                fundamentalActivity = std::max(fundamentalActivity, std::clamp(rawG, 0.0f, 1.0f));
+            }
+        }
+
+        // 5. Per-Band Spectral Subtraction
+        float outSum = 0.0f;
+        for (int i = 0; i < NUM_BANDS; ++i) {
+            float absVal = std::abs(b[i]);
+            float coeff = (absVal > levelStates[i]) ? mLevelAtt : mLevelRel;
+            levelStates[i] += (absVal - levelStates[i]) * coeff;
+            float r = levelStates[i];
+
+            float effectiveThresh = cachedLinThresh[i];
+            if (harmonicShield && i >= 4) {
+                effectiveThresh *= (1.0f - 0.60f * fundamentalActivity);
+            }
+
+            // Continuous subtractive gain formula
+            float targetG = 1.0f - (effectiveThresh / (r + 1e-9f));
+            targetG = std::max(floorVal, std::min(1.0f, targetG));
+
+            float scaledTargetG = 1.0f - reductionNorm * (1.0f - targetG);
+
+            float currentCoeff;
+            if (scaledTargetG > currentGains[i]) {
+                currentCoeff = mAttCoeff;
+            } else {
+                float tailDist = (currentGains[i] - floorVal) / (1.01f - floorVal);
+                float tailStab = 1.0f + (1.0f - std::min(1.0f, std::max(0.0f, tailDist))) * 8.0f;
+                currentCoeff = mLevelRel / tailStab;
+            }
+            currentGains[i] += (scaledTargetG - currentGains[i]) * currentCoeff;
+
+            outSum += b[i] * currentGains[i];
+        }
+
+        if (listenNoise) {
+            return s0 - outSum;
+        }
+
+        return flush_denormal(outSum);
+    }
+};
+
+// ============================================================================
 // Stage 1: Mechanical Soundboard Inertia & Anti-Quack Cell
 // ============================================================================
 class AcousticInertialCell {
@@ -414,6 +567,120 @@ struct FluidBiquad {
         a1 = (-2.0f * cs) / a0;
         a2 = (1.0f - alpha) / a0;
     }
+
+    void setPeaking(float fc, float gainDb, float Q, float sr) {
+        fc = std::max(20.0f, std::min(sr * 0.45f, fc));
+        float A = std::pow(10.0f, gainDb / 40.0f);
+        float omega = 2.0f * (float)M_PI * fc / sr;
+        float sn = std::sin(omega);
+        float cs = std::cos(omega);
+        float alpha = sn / (2.0f * Q);
+        float a0 = 1.0f + alpha / A;
+        b0 = (1.0f + alpha * A) / a0;
+        b1 = (-2.0f * cs) / a0;
+        b2 = (1.0f - alpha * A) / a0;
+        a1 = (-2.0f * cs) / a0;
+        a2 = (1.0f - alpha / A) / a0;
+    }
+
+    void setLowShelf(float fc, float gainDb, float Q, float sr) {
+        fc = std::max(20.0f, std::min(sr * 0.45f, fc));
+        float A = std::pow(10.0f, gainDb / 40.0f);
+        float omega = 2.0f * (float)M_PI * fc / sr;
+        float sn = std::sin(omega);
+        float cs = std::cos(omega);
+        float alpha = sn / (2.0f * Q);
+        float beta = 2.0f * std::sqrt(A) * alpha;
+
+        float a0 = (A + 1.0f) + (A - 1.0f) * cs + beta;
+        b0 = (A * ((A + 1.0f) - (A - 1.0f) * cs + beta)) / a0;
+        b1 = (2.0f * A * ((A - 1.0f) - (A + 1.0f) * cs)) / a0;
+        b2 = (A * ((A + 1.0f) - (A - 1.0f) * cs - beta)) / a0;
+        a1 = (-2.0f * ((A - 1.0f) + (A + 1.0f) * cs)) / a0;
+        a2 = ((A + 1.0f) + (A - 1.0f) * cs - beta) / a0;
+    }
+
+    void setHighShelf(float fc, float gainDb, float Q, float sr) {
+        fc = std::max(20.0f, std::min(sr * 0.45f, fc));
+        float A = std::pow(10.0f, gainDb / 40.0f);
+        float omega = 2.0f * (float)M_PI * fc / sr;
+        float sn = std::sin(omega);
+        float cs = std::cos(omega);
+        float alpha = sn / (2.0f * Q);
+        float beta = 2.0f * std::sqrt(A) * alpha;
+
+        float a0 = (A + 1.0f) - (A - 1.0f) * cs + beta;
+        b0 = (A * ((A + 1.0f) + (A - 1.0f) * cs + beta)) / a0;
+        b1 = (-2.0f * A * ((A - 1.0f) + (A + 1.0f) * cs)) / a0;
+        b2 = (A * ((A + 1.0f) - (A - 1.0f) * cs - beta)) / a0;
+        a1 = (2.0f * ((A - 1.0f) - (A + 1.0f) * cs)) / a0;
+        a2 = ((A + 1.0f) - (A - 1.0f) * cs - beta) / a0;
+    }
+};
+
+// ============================================================================
+// Stage 3B: Studio 4-Band Acoustic Parametric EQ (Active 3D Tone Matrix)
+// ============================================================================
+class Acoustic4BandEQ {
+public:
+    FluidBiquad band1_lowShelf;  // 110 Hz Warmth Shelf
+    FluidBiquad band2_lowMid;    // 200 - 1000 Hz Boxiness Cut
+    FluidBiquad band3_highMid;   // 1.5 - 6.5 kHz String Articulation
+    FluidBiquad band4_highShelf; // 9.5 kHz Air Glass Shelf
+
+    float sample_rate = 48000.0f;
+
+    float lastLowGain = -999.0f;
+    float lastLowMidFreq = -999.0f, lastLowMidGain = -999.0f;
+    float lastHighMidFreq = -999.0f, lastHighMidGain = -999.0f;
+    float lastHighGain = -999.0f;
+
+    void init(float sr) {
+        sample_rate = sr > 0.0f ? sr : 48000.0f;
+        reset();
+        update(0.0f, 450.0f, -2.0f, 3200.0f, 1.5f, 2.0f);
+    }
+
+    void reset() {
+        band1_lowShelf.reset();
+        band2_lowMid.reset();
+        band3_highMid.reset();
+        band4_highShelf.reset();
+        lastLowGain = lastLowMidFreq = lastLowMidGain = lastHighMidFreq = lastHighMidGain = lastHighGain = -999.0f;
+    }
+
+    void update(float lowGainDb, float lowMidFreq, float lowMidGainDb,
+                float highMidFreq, float highMidGainDb, float highGainDb) {
+        if (std::abs(lowGainDb - lastLowGain) > 0.05f) {
+            lastLowGain = lowGainDb;
+            band1_lowShelf.setLowShelf(110.0f, lowGainDb, 0.7071f, sample_rate);
+        }
+
+        if (std::abs(lowMidFreq - lastLowMidFreq) > 1.0f || std::abs(lowMidGainDb - lastLowMidGain) > 0.05f) {
+            lastLowMidFreq = lowMidFreq;
+            lastLowMidGain = lowMidGainDb;
+            band2_lowMid.setPeaking(std::clamp(lowMidFreq, 150.0f, 1200.0f), lowMidGainDb, 1.25f, sample_rate);
+        }
+
+        if (std::abs(highMidFreq - lastHighMidFreq) > 2.0f || std::abs(highMidGainDb - lastHighMidGain) > 0.05f) {
+            lastHighMidFreq = highMidFreq;
+            lastHighMidGain = highMidGainDb;
+            band3_highMid.setPeaking(std::clamp(highMidFreq, 1200.0f, 6500.0f), highMidGainDb, 1.20f, sample_rate);
+        }
+
+        if (std::abs(highGainDb - lastHighGain) > 0.05f) {
+            lastHighGain = highGainDb;
+            band4_highShelf.setHighShelf(9500.0f, highGainDb, 0.7071f, sample_rate);
+        }
+    }
+
+    inline float process(float in_sample) {
+        float s = band1_lowShelf.process(in_sample);
+        s = band2_lowMid.process(s);
+        s = band3_highMid.process(s);
+        s = band4_highShelf.process(s);
+        return flush_denormal(s);
+    }
 };
 
 struct FluidReverbSpace {
@@ -565,41 +832,61 @@ struct FluidReverbSpace {
 // ============================================================================
 class CyberAcousticEngine {
 public:
+    AcousticCyberDenoiser  denoiser;
     AcousticInertialCell   inertial_cell;
     FluidAcousticCavity    cavity_engine;
     SmartAcousticDeFizz    defizz_engine;
+    Acoustic4BandEQ        eq_engine;
     AcousticFeedbackKiller feedback_killer;
     FluidReverbSpace       fluid_reverb;
     float sample_rate = 48000.0f;
 
     void init(float sr) {
         sample_rate = sr;
+        denoiser.init(sr);
         inertial_cell.init(sr);
         cavity_engine.init(sr);
         defizz_engine.init(sr);
+        eq_engine.init(sr);
         feedback_killer.init(sr);
         fluid_reverb.reset();
     }
 
     void reset() {
+        denoiser.reset();
         inertial_cell.reset();
         cavity_engine.reset();
         defizz_engine.reset();
+        eq_engine.reset();
         feedback_killer.reset();
         fluid_reverb.reset();
     }
 
-    // Process mono or stereo pickup input to stereo studio soundfield with reverb
+    // Process mono or stereo pickup input to stereo studio soundfield with denoiser, eq, and reverb
     inline void process(float in_sample, float& out_left, float& out_right,
+                        float denoise_amount,  float denoise_thresh_db,
+                        bool  harmonic_shield, bool  listen_noise,
                         float quack_reduction, float body_depth,
                         float defizz_amount,   float air_shimmer,
+                        float eq_low_gain,     float eq_low_mid_freq, float eq_low_mid_gain,
+                        float eq_high_mid_freq,float eq_high_mid_gain,float eq_high_gain,
                         float stereo_width,    int body_type_preset,
                         float custom_size,     float custom_shape,
                         float reverb_mix,      float reverb_decay,
                         float reverb_size,     float reverb_tone,
                         float output_gain_linear) {
+        // Stage 0: 10-Band Cyber-Denoiser PRO (Spectral Phase Subtraction)
+        float s0 = denoiser.process(in_sample, denoise_amount, denoise_thresh_db,
+                                    harmonic_shield, listen_noise);
+
+        if (listen_noise) {
+            out_left  = flush_denormal(s0 * output_gain_linear);
+            out_right = flush_denormal(s0 * output_gain_linear);
+            return;
+        }
+
         // Stage 1: Anti-Quack Mechanical Inertia
-        float s1 = inertial_cell.process(in_sample, quack_reduction, 1.0f);
+        float s1 = inertial_cell.process(s0, quack_reduction, 1.0f);
 
         // Stage 2: 2-DOF Coupled Fluid Space Cavity
         cavity_engine.setBodyGeometry(body_type_preset, custom_size, custom_shape);
@@ -608,11 +895,16 @@ public:
         // Stage 3: Zero-Fizz Subtractive High-Band Conditioning
         float s3 = defizz_engine.process(s2, defizz_amount, air_shimmer);
 
+        // Stage 3B: Studio 4-Band Acoustic Parametric EQ (Active 3D Tone Matrix)
+        eq_engine.update(eq_low_gain, eq_low_mid_freq, eq_low_mid_gain,
+                         eq_high_mid_freq, eq_high_mid_gain, eq_high_gain);
+        float s4 = eq_engine.process(s3);
+
         // Stage 4: Auto-Tracking Feedback Nulls
-        float s4 = feedback_killer.process(s3);
+        float s5 = feedback_killer.process(s4);
 
         // Stage 5: Stereo Acoustic Imager (Virtual Mic Pair: 12th Fret & Lower Bout)
-        float mid  = s4;
+        float mid  = s5;
         float side = (s2 - s1) * 0.45f * stereo_width;
 
         float dryL = mid + side;
