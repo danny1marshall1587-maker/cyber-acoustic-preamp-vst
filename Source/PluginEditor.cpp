@@ -37,11 +37,36 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
         addAndMakeVisible(s);
 
         l.setText(text, juce::dontSendNotification);
-        l.setFont(juce::FontOptions(11.5f));
+        l.setFont(juce::FontOptions(11.0f));
         l.setJustificationType(juce::Justification::centred);
         l.setColour(juce::Label::textColourId, juce::Colour(0xffd5c4b1));
         addAndMakeVisible(l);
     };
+
+    auto setupToggle = [this](juce::ToggleButton& b, const juce::String& text) {
+        b.setButtonText(text);
+        b.setColour(juce::ToggleButton::textColourId, juce::Colour(0xffedd9be));
+        b.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xffd4974f));
+        b.setColour(juce::ToggleButton::tickDisabledColourId, juce::Colour(0xff55483d));
+        addAndMakeVisible(b);
+    };
+
+    // 1c. 10-Band Cyber-Denoiser PRO
+    setupRotary(denoiseAmountSlider, denoiseAmountLabel, "D-NOISE", "%");
+    denoiseAmountAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "denoiseAmount", denoiseAmountSlider);
+
+    setupRotary(denoiseThreshSlider, denoiseThreshLabel, "THRESHOLD", " dB");
+    denoiseThreshAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "denoiseThreshold", denoiseThreshSlider);
+
+    setupToggle(denoiseShieldToggle, "HARMONIC SHIELD");
+    denoiseShieldAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        audioProcessor.apvts, "denoiseHarmonicShield", denoiseShieldToggle);
+
+    setupToggle(denoiseListenToggle, "LISTEN NOISE");
+    denoiseListenAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        audioProcessor.apvts, "denoiseListen", denoiseListenToggle);
 
     // 2. Anti-Quack & De-Fizz Sliders
     setupRotary(quackSlider, quackLabel, "ANTI-QUACK", "%");
@@ -85,6 +110,31 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
     bodyDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.apvts, "bodyDepth", bodyDepthSlider);
 
+    // 3B. Studio 4-Band Acoustic Parametric EQ (Active 3D Tone Matrix)
+    setupRotary(eqLowGainSlider, eqLowGainLabel, "BODY (110Hz)", " dB");
+    eqLowGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "eqLowGain", eqLowGainSlider);
+
+    setupRotary(eqLowMidFreqSlider, eqLowMidFreqLabel, "LO-MID FREQ", " Hz");
+    eqLowMidFreqAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "eqLowMidFreq", eqLowMidFreqSlider);
+
+    setupRotary(eqLowMidGainSlider, eqLowMidGainLabel, "LO-MID CUT", " dB");
+    eqLowMidGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "eqLowMidGain", eqLowMidGainSlider);
+
+    setupRotary(eqHighMidFreqSlider, eqHighMidFreqLabel, "HI-MID FREQ", " Hz");
+    eqHighMidFreqAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "eqHighMidFreq", eqHighMidFreqSlider);
+
+    setupRotary(eqHighMidGainSlider, eqHighMidGainLabel, "HI-MID GAIN", " dB");
+    eqHighMidGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "eqHighMidGain", eqHighMidGainSlider);
+
+    setupRotary(eqHighGainSlider, eqHighGainLabel, "AIR (9.5kHz)", " dB");
+    eqHighGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "eqHighGain", eqHighGainSlider);
+
     // 4. Fluid Reverb Space (From Euphoria Amp)
     setupRotary(reverbMixSlider, reverbMixLabel, "REVERB MIX", "%");
     reverbMixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -103,8 +153,7 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
         audioProcessor.apvts, "reverbTone", reverbToneSlider);
 
     // 5. Feedback Defense & Stage Master
-    addAndMakeVisible(afd1Toggle);
-    afd1Toggle.setButtonText("AIR NOTCH (A0)");
+    setupToggle(afd1Toggle, "AIR NOTCH (A0)");
     afd1Attachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         audioProcessor.apvts, "feedbackKill1", afd1Toggle);
 
@@ -112,8 +161,7 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
     afdFreq1Attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.apvts, "feedbackFreq1", afdFreq1Slider);
 
-    addAndMakeVisible(afd2Toggle);
-    afd2Toggle.setButtonText("BODY NOTCH (T1)");
+    setupToggle(afd2Toggle, "BODY NOTCH (T1)");
     afd2Attachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         audioProcessor.apvts, "feedbackKill2", afd2Toggle);
 
@@ -129,9 +177,9 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
     outputGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.apvts, "outputGain", outputGainSlider);
 
-    setSize(960, 600);
+    setSize(1120, 680);
     setResizable(true, true);
-    setResizeLimits(800, 520, 1500, 950);
+    setResizeLimits(960, 580, 1600, 1000);
 
     startTimerHz(30);
 }
@@ -162,44 +210,72 @@ void CyberAcousticEditor::loadPreset(int id)
     switch (id) {
         case 1: // Dreadnought Studio Flatpicker
             setVal("bodyType", 0); setVal("bodySize", 1.0f); setVal("bodyShape", 0.82f);
+            setVal("denoiseAmount", 50.0f); setVal("denoiseThreshold", -80.0f);
             setVal("quackReduction", 65.0f); setVal("bodyDepth", 70.0f); setVal("deFizz", 60.0f);
-            setVal("airShimmer", 35.0f); setVal("stereoWidth", 110.0f);
+            setVal("airShimmer", 35.0f);
+            setVal("eqLowGain", 1.0f); setVal("eqLowMidFreq", 450.0f); setVal("eqLowMidGain", -2.5f);
+            setVal("eqHighMidFreq", 3200.0f); setVal("eqHighMidGain", 1.5f); setVal("eqHighGain", 2.0f);
+            setVal("stereoWidth", 110.0f);
             setVal("reverbMix", 18.0f); setVal("reverbDecay", 35.0f); setVal("reverbSize", 1.0f); setVal("reverbTone", 6000.0f);
             break;
         case 2: // Modern Fingerstyle OM
             setVal("bodyType", 2); setVal("bodySize", 0.95f); setVal("bodyShape", 0.42f);
+            setVal("denoiseAmount", 55.0f); setVal("denoiseThreshold", -82.0f);
             setVal("quackReduction", 55.0f); setVal("bodyDepth", 60.0f); setVal("deFizz", 50.0f);
-            setVal("airShimmer", 45.0f); setVal("stereoWidth", 130.0f);
+            setVal("airShimmer", 45.0f);
+            setVal("eqLowGain", 0.5f); setVal("eqLowMidFreq", 500.0f); setVal("eqLowMidGain", -3.0f);
+            setVal("eqHighMidFreq", 3800.0f); setVal("eqHighMidGain", 2.5f); setVal("eqHighGain", 3.5f);
+            setVal("stereoWidth", 130.0f);
             setVal("reverbMix", 26.0f); setVal("reverbDecay", 55.0f); setVal("reverbSize", 1.25f); setVal("reverbTone", 7500.0f);
             break;
         case 3: // Cavernous J-200 Strumming
             setVal("bodyType", 1); setVal("bodySize", 1.25f); setVal("bodyShape", 0.65f);
+            setVal("denoiseAmount", 60.0f); setVal("denoiseThreshold", -78.0f);
             setVal("quackReduction", 75.0f); setVal("bodyDepth", 85.0f); setVal("deFizz", 65.0f);
-            setVal("airShimmer", 40.0f); setVal("stereoWidth", 140.0f);
+            setVal("airShimmer", 40.0f);
+            setVal("eqLowGain", 2.5f); setVal("eqLowMidFreq", 380.0f); setVal("eqLowMidGain", -2.0f);
+            setVal("eqHighMidFreq", 2800.0f); setVal("eqHighMidGain", 1.0f); setVal("eqHighGain", 2.0f);
+            setVal("stereoWidth", 140.0f);
             setVal("reverbMix", 32.0f); setVal("reverbDecay", 70.0f); setVal("reverbSize", 1.8f); setVal("reverbTone", 5000.0f);
             break;
         case 4: // Delta Blues Parlor
             setVal("bodyType", 4); setVal("bodySize", 0.80f); setVal("bodyShape", 0.25f);
+            setVal("denoiseAmount", 40.0f); setVal("denoiseThreshold", -75.0f);
             setVal("quackReduction", 45.0f); setVal("bodyDepth", 50.0f); setVal("deFizz", 40.0f);
-            setVal("airShimmer", 20.0f); setVal("stereoWidth", 75.0f);
+            setVal("airShimmer", 20.0f);
+            setVal("eqLowGain", -2.0f); setVal("eqLowMidFreq", 650.0f); setVal("eqLowMidGain", 1.5f);
+            setVal("eqHighMidFreq", 2400.0f); setVal("eqHighMidGain", 2.0f); setVal("eqHighGain", -1.0f);
+            setVal("stereoWidth", 75.0f);
             setVal("reverbMix", 12.0f); setVal("reverbDecay", 22.0f); setVal("reverbSize", 0.7f); setVal("reverbTone", 4500.0f);
             break;
         case 5: // Concert Classical Nylon
             setVal("bodyType", 5); setVal("bodySize", 0.92f); setVal("bodyShape", 0.35f);
+            setVal("denoiseAmount", 45.0f); setVal("denoiseThreshold", -84.0f);
             setVal("quackReduction", 40.0f); setVal("bodyDepth", 65.0f); setVal("deFizz", 45.0f);
-            setVal("airShimmer", 25.0f); setVal("stereoWidth", 100.0f);
+            setVal("airShimmer", 25.0f);
+            setVal("eqLowGain", 1.5f); setVal("eqLowMidFreq", 400.0f); setVal("eqLowMidGain", -1.5f);
+            setVal("eqHighMidFreq", 2600.0f); setVal("eqHighMidGain", 0.5f); setVal("eqHighGain", 1.0f);
+            setVal("stereoWidth", 100.0f);
             setVal("reverbMix", 28.0f); setVal("reverbDecay", 60.0f); setVal("reverbSize", 1.4f); setVal("reverbTone", 6500.0f);
             break;
         case 6: // Acoustic Jazz Archtop
             setVal("bodyType", 6); setVal("bodySize", 1.05f); setVal("bodyShape", 0.18f);
+            setVal("denoiseAmount", 50.0f); setVal("denoiseThreshold", -80.0f);
             setVal("quackReduction", 50.0f); setVal("bodyDepth", 45.0f); setVal("deFizz", 55.0f);
-            setVal("airShimmer", 30.0f); setVal("stereoWidth", 80.0f);
+            setVal("airShimmer", 30.0f);
+            setVal("eqLowGain", 1.0f); setVal("eqLowMidFreq", 550.0f); setVal("eqLowMidGain", 1.0f);
+            setVal("eqHighMidFreq", 2200.0f); setVal("eqHighMidGain", -1.0f); setVal("eqHighGain", -2.5f);
+            setVal("stereoWidth", 80.0f);
             setVal("reverbMix", 16.0f); setVal("reverbDecay", 30.0f); setVal("reverbSize", 0.9f); setVal("reverbTone", 5500.0f);
             break;
         case 7: // Gypsy Django Selmer
             setVal("bodyType", 7); setVal("bodySize", 1.0f); setVal("bodyShape", 0.12f);
+            setVal("denoiseAmount", 55.0f); setVal("denoiseThreshold", -80.0f);
             setVal("quackReduction", 60.0f); setVal("bodyDepth", 55.0f); setVal("deFizz", 60.0f);
-            setVal("airShimmer", 50.0f); setVal("stereoWidth", 90.0f);
+            setVal("airShimmer", 50.0f);
+            setVal("eqLowGain", -1.5f); setVal("eqLowMidFreq", 750.0f); setVal("eqLowMidGain", 2.5f);
+            setVal("eqHighMidFreq", 3500.0f); setVal("eqHighMidGain", 3.0f); setVal("eqHighGain", 1.5f);
+            setVal("stereoWidth", 90.0f);
             setVal("reverbMix", 20.0f); setVal("reverbDecay", 38.0f); setVal("reverbSize", 1.0f); setVal("reverbTone", 7000.0f);
             break;
     }
@@ -227,22 +303,24 @@ void CyberAcousticEditor::paint(juce::Graphics& g)
 
     g.setColour(juce::Colour(0xffa19284));
     g.setFont(juce::FontOptions(10.5f));
-    g.drawText("Fluid Space Acoustic Cavity Physics & Anti-Quack Engine", 22, 32, 360, 16, juce::Justification::left, false);
+    g.drawText("Fluid Space Acoustic Cavity Physics, 10-Band D-Noise & Active 3D Tone Matrix", 22, 32, 460, 16, juce::Justification::left, false);
 
-    // Section Dividing Lines
-    auto mainArea = getLocalBounds().reduced(16).withTrimmedTop(54);
-    float colW = mainArea.getWidth() / 3.0f;
+    // Section Dividing Lines (4 Columns)
+    auto mainArea = getLocalBounds().reduced(14).withTrimmedTop(54);
+    float colW = mainArea.getWidth() / 4.0f;
 
     g.setColour(juce::Colour(0xff2d2825));
-    g.drawVerticalLine((int)(mainArea.getX() + colW), (float)mainArea.getY() + 10, (float)mainArea.getBottom() - 10);
-    g.drawVerticalLine((int)(mainArea.getX() + colW * 2.0f), (float)mainArea.getY() + 10, (float)mainArea.getBottom() - 10);
+    for (int c = 1; c < 4; ++c) {
+        g.drawVerticalLine((int)(mainArea.getX() + colW * (float)c), (float)mainArea.getY() + 10, (float)mainArea.getBottom() - 10);
+    }
 
     // Section Titles
     g.setColour(juce::Colour(0xffd4974f));
-    g.setFont(juce::FontOptions(12.5f));
-    g.drawText("TRANSDUCER CONDITIONING", (int)mainArea.getX(), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
+    g.setFont(juce::FontOptions(11.5f));
+    g.drawText("D-NOISE & TRANSDUCER", (int)mainArea.getX(), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
     g.drawText("FLUID ACOUSTIC CAVITY", (int)(mainArea.getX() + colW), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
-    g.drawText("FLUID REVERB & STAGE MASTER", (int)(mainArea.getX() + colW * 2.0f), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
+    g.drawText("STUDIO 4-BAND EQ", (int)(mainArea.getX() + colW * 2.0f), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
+    g.drawText("FLUID REVERB & MASTER", (int)(mainArea.getX() + colW * 3.0f), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
 }
 
 void CyberAcousticEditor::resized()
@@ -251,64 +329,130 @@ void CyberAcousticEditor::resized()
     auto header = area.removeFromTop(56);
 
     // Header controls: Input Selector & Preset Selector
-    presetSelector.setBounds(header.getRight() - 300, 14, 280, 28);
-    inputSelector.setBounds(header.getRight() - 530, 14, 215, 28);
+    presetSelector.setBounds(header.getRight() - 320, 14, 300, 28);
+    inputSelector.setBounds(header.getRight() - 560, 14, 225, 28);
 
-    auto mainArea = area.reduced(16);
-    int colW = mainArea.getWidth() / 3;
+    auto mainArea = area.reduced(14);
+    int colW = mainArea.getWidth() / 4;
 
-    // --- Column 1: Transducer & Anti-Quack ---
-    auto col1 = mainArea.removeFromLeft(colW).reduced(10);
-    col1.removeFromTop(28); // Header offset
+    // =========================================================================
+    // --- Column 1: D-NOISE & TRANSDUCER ---
+    // =========================================================================
+    auto col1 = mainArea.removeFromLeft(colW).reduced(6);
+    col1.removeFromTop(26);
 
-    int knobH = (col1.getHeight() - 40) / 3;
+    // D-Noise Section
+    auto dnRow1 = col1.removeFromTop(95);
+    int dnHalfW = dnRow1.getWidth() / 2;
+    auto dnR1L = dnRow1.removeFromLeft(dnHalfW);
+    denoiseAmountLabel.setBounds(dnR1L.removeFromBottom(16));
+    denoiseAmountSlider.setBounds(dnR1L);
 
-    auto qArea = col1.removeFromTop(knobH);
-    quackLabel.setBounds(qArea.removeFromBottom(20));
-    quackSlider.setBounds(qArea.reduced(10));
+    auto dnR1R = dnRow1;
+    denoiseThreshLabel.setBounds(dnR1R.removeFromBottom(16));
+    denoiseThreshSlider.setBounds(dnR1R);
 
-    auto dfArea = col1.removeFromTop(knobH);
-    deFizzLabel.setBounds(dfArea.removeFromBottom(20));
-    deFizzSlider.setBounds(dfArea.reduced(10));
+    auto dnToggleRow = col1.removeFromTop(32);
+    int tglHalfW = dnToggleRow.getWidth() / 2;
+    denoiseShieldToggle.setBounds(dnToggleRow.removeFromLeft(tglHalfW).reduced(2));
+    denoiseListenToggle.setBounds(dnToggleRow.reduced(2));
 
-    auto asArea = col1.removeFromTop(knobH);
-    airShimmerLabel.setBounds(asArea.removeFromBottom(20));
-    airShimmerSlider.setBounds(asArea.reduced(10));
+    col1.removeFromTop(10);
 
-    // --- Column 2: Fluid Cavity & Guitar Visualizer ---
-    auto col2 = mainArea.removeFromLeft(colW).reduced(10);
-    col2.removeFromTop(28);
+    // Transducer & Anti-Quack (3 Knobs)
+    int transKnobH = (col1.getHeight() - 10) / 3;
+
+    auto qArea = col1.removeFromTop(transKnobH);
+    quackLabel.setBounds(qArea.removeFromBottom(16));
+    quackSlider.setBounds(qArea.reduced(6));
+
+    auto dfArea = col1.removeFromTop(transKnobH);
+    deFizzLabel.setBounds(dfArea.removeFromBottom(16));
+    deFizzSlider.setBounds(dfArea.reduced(6));
+
+    auto asArea = col1;
+    airShimmerLabel.setBounds(asArea.removeFromBottom(16));
+    airShimmerSlider.setBounds(asArea.reduced(6));
+
+    // =========================================================================
+    // --- Column 2: FLUID ACOUSTIC CAVITY ---
+    // =========================================================================
+    auto col2 = mainArea.removeFromLeft(colW).reduced(6);
+    col2.removeFromTop(26);
 
     bodyTypeBox.setBounds(col2.removeFromTop(28));
     col2.removeFromTop(8);
 
-    // Guitar visualizer occupies middle 45%
-    int visH = (int)(col2.getHeight() * 0.52f);
+    int visH = (int)(col2.getHeight() * 0.58f);
     visualizer.setBounds(col2.removeFromTop(visH));
     col2.removeFromTop(10);
 
-    // Bottom row: Body Size, Shape, Cavity Depth
     auto bottomCavityRow = col2;
     int subKnobW = bottomCavityRow.getWidth() / 3;
 
     auto szArea = bottomCavityRow.removeFromLeft(subKnobW);
-    bodySizeLabel.setBounds(szArea.removeFromBottom(20));
+    bodySizeLabel.setBounds(szArea.removeFromBottom(16));
     bodySizeSlider.setBounds(szArea);
 
     auto shArea = bottomCavityRow.removeFromLeft(subKnobW);
-    bodyShapeLabel.setBounds(shArea.removeFromBottom(20));
+    bodyShapeLabel.setBounds(shArea.removeFromBottom(16));
     bodyShapeSlider.setBounds(shArea);
 
     auto dpArea = bottomCavityRow;
-    bodyDepthLabel.setBounds(dpArea.removeFromBottom(20));
+    bodyDepthLabel.setBounds(dpArea.removeFromBottom(16));
     bodyDepthSlider.setBounds(dpArea);
 
-    // --- Column 3: Fluid Reverb Space & Stage Master ---
-    auto col3 = mainArea.reduced(10);
-    col3.removeFromTop(28);
+    // =========================================================================
+    // --- Column 3: STUDIO 4-BAND ACOUSTIC EQ ---
+    // =========================================================================
+    auto col3 = mainArea.removeFromLeft(colW).reduced(6);
+    col3.removeFromTop(26);
+
+    // Band 1: Low Shelf Warmth
+    auto eqRow1 = col3.removeFromTop(98);
+    eqLowGainLabel.setBounds(eqRow1.removeFromBottom(16));
+    eqLowGainSlider.setBounds(eqRow1.reduced(4));
+
+    col3.removeFromTop(6);
+
+    // Band 2: Low-Mid Freq & Cut (2 knobs side-by-side)
+    auto eqRow2 = col3.removeFromTop(105);
+    int eqHalfW = eqRow2.getWidth() / 2;
+    auto eqR2L = eqRow2.removeFromLeft(eqHalfW);
+    eqLowMidFreqLabel.setBounds(eqR2L.removeFromBottom(16));
+    eqLowMidFreqSlider.setBounds(eqR2L);
+
+    auto eqR2R = eqRow2;
+    eqLowMidGainLabel.setBounds(eqR2R.removeFromBottom(16));
+    eqLowMidGainSlider.setBounds(eqR2R);
+
+    col3.removeFromTop(6);
+
+    // Band 3: High-Mid Freq & Gain (2 knobs side-by-side)
+    auto eqRow3 = col3.removeFromTop(105);
+    auto eqR3L = eqRow3.removeFromLeft(eqHalfW);
+    eqHighMidFreqLabel.setBounds(eqR3L.removeFromBottom(16));
+    eqHighMidFreqSlider.setBounds(eqR3L);
+
+    auto eqR3R = eqRow3;
+    eqHighMidGainLabel.setBounds(eqR3R.removeFromBottom(16));
+    eqHighMidGainSlider.setBounds(eqR3R);
+
+    col3.removeFromTop(6);
+
+    // Band 4: Air Glass High Shelf
+    auto eqRow4 = col3;
+    eqHighGainLabel.setBounds(eqRow4.removeFromBottom(16));
+    eqHighGainSlider.setBounds(eqRow4.reduced(4));
+
+    // =========================================================================
+    // --- Column 4: FLUID REVERB & STAGE MASTER ---
+    // =========================================================================
+    auto col4 = mainArea.reduced(6);
+    col4.removeFromTop(26);
 
     // Part A: Fluid Reverb Space (2x2 Grid)
-    auto revArea = col3.removeFromTop(150);
+    auto revArea = col4.removeFromTop(185);
     int revRowH = revArea.getHeight() / 2;
     auto revRow1 = revArea.removeFromTop(revRowH);
     auto revRow2 = revArea;
@@ -330,32 +474,32 @@ void CyberAcousticEditor::resized()
     reverbToneLabel.setBounds(r2R.removeFromBottom(16));
     reverbToneSlider.setBounds(r2R);
 
-    col3.removeFromTop(10);
+    col4.removeFromTop(10);
 
     // Part B: Dual AFD Surgical Notches
-    auto afdRow1 = col3.removeFromTop(60);
+    auto afdRow1 = col4.removeFromTop(54);
     afd1Toggle.setBounds(afdRow1.removeFromLeft(125).reduced(2));
     afdFreq1Label.setBounds(afdRow1.removeFromBottom(16));
     afdFreq1Slider.setBounds(afdRow1);
 
-    col3.removeFromTop(4);
+    col4.removeFromTop(4);
 
-    auto afdRow2 = col3.removeFromTop(60);
+    auto afdRow2 = col4.removeFromTop(54);
     afd2Toggle.setBounds(afdRow2.removeFromLeft(125).reduced(2));
     afdFreq2Label.setBounds(afdRow2.removeFromBottom(16));
     afdFreq2Slider.setBounds(afdRow2);
 
-    col3.removeFromTop(10);
+    col4.removeFromTop(10);
 
     // Part C: Stereo Width & Output Gain
-    auto masterRow = col3;
+    auto masterRow = col4;
     int mKnobW = masterRow.getWidth() / 2;
 
     auto swArea = masterRow.removeFromLeft(mKnobW);
-    stereoWidthLabel.setBounds(swArea.removeFromBottom(18));
-    stereoWidthSlider.setBounds(swArea.reduced(6));
+    stereoWidthLabel.setBounds(swArea.removeFromBottom(16));
+    stereoWidthSlider.setBounds(swArea.reduced(4));
 
     auto outArea = masterRow;
-    outputGainLabel.setBounds(outArea.removeFromBottom(18));
-    outputGainSlider.setBounds(outArea.reduced(6));
+    outputGainLabel.setBounds(outArea.removeFromBottom(16));
+    outputGainSlider.setBounds(outArea.reduced(4));
 }
