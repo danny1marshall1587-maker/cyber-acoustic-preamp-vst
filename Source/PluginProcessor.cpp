@@ -60,6 +60,30 @@ juce::AudioProcessorValueTreeState::ParameterLayout CyberAcousticProcessor::crea
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("airShimmer", 1), "Air & Shimmer", 0.0f, 100.0f, 35.0f));
 
+    // 10-Band Cyber-Denoiser PRO
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("denoiseAmount", 1), "D-Noise Reduction", 0.0f, 100.0f, 50.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("denoiseThreshold", 1), "D-Noise Threshold", -100.0f, -40.0f, -80.0f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID("denoiseHarmonicShield", 1), "Harmonic Shield", true));
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID("denoiseListen", 1), "Listen Noise", false));
+
+    // Studio 4-Band Acoustic Parametric EQ (Active 3D Tone Matrix)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("eqLowGain", 1), "Body Warmth (110 Hz)", -12.0f, 12.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("eqLowMidFreq", 1), "Low-Mid Freq", 200.0f, 1000.0f, 450.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("eqLowMidGain", 1), "Low-Mid Cut", -12.0f, 12.0f, -2.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("eqHighMidFreq", 1), "High-Mid Freq", 1500.0f, 6000.0f, 3200.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("eqHighMidGain", 1), "High-Mid Gain", -12.0f, 12.0f, 1.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("eqHighGain", 1), "Air Glass (9.5 kHz)", -12.0f, 12.0f, 2.0f));
+
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("stereoWidth", 1), "Stereo Width", 0.0f, 200.0f, 100.0f));
 
@@ -157,6 +181,20 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     float gainDb = apvts.getRawParameterValue("outputGain")->load();
     float gainLin = std::pow(10.0f, gainDb / 20.0f);
 
+    // 10-Band Cyber-Denoiser PRO
+    float denoiseAmt = apvts.getRawParameterValue("denoiseAmount")->load() / 100.0f;
+    float denoiseThresh = apvts.getRawParameterValue("denoiseThreshold")->load();
+    bool  denoiseHarmonicShield = apvts.getRawParameterValue("denoiseHarmonicShield")->load() > 0.5f;
+    bool  denoiseListen = apvts.getRawParameterValue("denoiseListen")->load() > 0.5f;
+
+    // Studio 4-Band Acoustic EQ
+    float eqLow = apvts.getRawParameterValue("eqLowGain")->load();
+    float eqLowMidF = apvts.getRawParameterValue("eqLowMidFreq")->load();
+    float eqLowMidG = apvts.getRawParameterValue("eqLowMidGain")->load();
+    float eqHighMidF = apvts.getRawParameterValue("eqHighMidFreq")->load();
+    float eqHighMidG = apvts.getRawParameterValue("eqHighMidGain")->load();
+    float eqHigh = apvts.getRawParameterValue("eqHighGain")->load();
+
     float revMix = apvts.getRawParameterValue("reverbMix")->load() / 100.0f;
     float revDecay = apvts.getRawParameterValue("reverbDecay")->load() / 100.0f;
     float revSize = apvts.getRawParameterValue("reverbSize")->load();
@@ -192,11 +230,17 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             float dummy1 = 0.0f, dummy2 = 0.0f;
 
             float l = 0.0f, r = 0.0f;
-            dspEngineLeft.process(sL, l, dummy1, quack, depth, defizz, shimmer, width,
-                                  bodyType, bodySize, bodyShape,
+            dspEngineLeft.process(sL, l, dummy1,
+                                  denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
+                                  quack, depth, defizz, shimmer,
+                                  eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
+                                  width, bodyType, bodySize, bodyShape,
                                   revMix, revDecay, revSize, revTone, gainLin);
-            dspEngineRight.process(sR, dummy2, r, quack, depth, defizz, shimmer, width,
-                                   bodyType, bodySize, bodyShape,
+            dspEngineRight.process(sR, dummy2, r,
+                                   denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
+                                   quack, depth, defizz, shimmer,
+                                   eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
+                                   width, bodyType, bodySize, bodyShape,
                                    revMix, revDecay, revSize, revTone, gainLin);
 
             float mid = 0.5f * (l + r);
@@ -242,8 +286,11 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
             // Process mono acoustic guitar through fluid space cavity & stereo mic imager
             float l = 0.0f, r = 0.0f;
-            dspEngineLeft.process(guitarMono, l, r, quack, depth, defizz, shimmer, width,
-                                  bodyType, bodySize, bodyShape,
+            dspEngineLeft.process(guitarMono, l, r,
+                                  denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
+                                  quack, depth, defizz, shimmer,
+                                  eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
+                                  width, bodyType, bodySize, bodyShape,
                                   revMix, revDecay, revSize, revTone, gainLin);
 
             if (totalNumOutputChannels >= 2) {
