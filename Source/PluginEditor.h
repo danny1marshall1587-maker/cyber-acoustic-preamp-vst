@@ -26,6 +26,21 @@ private:
     juce::ComboBox inputSelector;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> inputAttachment;
 
+    // Controls: 10-Band Cyber-Denoiser PRO
+    juce::Slider denoiseAmountSlider;
+    juce::Label denoiseAmountLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> denoiseAmountAttachment;
+
+    juce::Slider denoiseThreshSlider;
+    juce::Label denoiseThreshLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> denoiseThreshAttachment;
+
+    juce::ToggleButton denoiseShieldToggle;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> denoiseShieldAttachment;
+
+    juce::ToggleButton denoiseListenToggle;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> denoiseListenAttachment;
+
     // Controls: Transducer & Anti-Quack
     juce::Slider quackSlider;
     juce::Label quackLabel;
@@ -54,6 +69,31 @@ private:
     juce::Slider bodyDepthSlider;
     juce::Label bodyDepthLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bodyDepthAttachment;
+
+    // Controls: Studio 4-Band Acoustic Parametric EQ (Active 3D Tone Matrix)
+    juce::Slider eqLowGainSlider;
+    juce::Label eqLowGainLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> eqLowGainAttachment;
+
+    juce::Slider eqLowMidFreqSlider;
+    juce::Label eqLowMidFreqLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> eqLowMidFreqAttachment;
+
+    juce::Slider eqLowMidGainSlider;
+    juce::Label eqLowMidGainLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> eqLowMidGainAttachment;
+
+    juce::Slider eqHighMidFreqSlider;
+    juce::Label eqHighMidFreqLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> eqHighMidFreqAttachment;
+
+    juce::Slider eqHighMidGainSlider;
+    juce::Label eqHighMidGainLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> eqHighMidGainAttachment;
+
+    juce::Slider eqHighGainSlider;
+    juce::Label eqHighGainLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> eqHighGainAttachment;
 
     // Controls: Pure Fluid Dynamics Reverb Space (From Euphoria Amp)
     juce::Slider reverbMixSlider;
