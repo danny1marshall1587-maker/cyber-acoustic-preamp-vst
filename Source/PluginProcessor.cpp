@@ -55,6 +55,25 @@ juce::AudioProcessorValueTreeState::ParameterLayout CyberAcousticProcessor::crea
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("bodyShape", 1), "Body Shape (Sigma)", 0.0f, 1.0f, 0.5f));
 
+    // Dual Body Stereo Emulation & Spatial Widening Trick
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID("bodyDualMode", 1), "Dual Body Stereo Split", false));
+
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID("bodyTypeB", 1), "Body Type B (Right)", bodyTypes, 2)); // Default OM
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("bodySizeB", 1), "Body Size B", 0.5f, 2.0f, 1.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("bodyShapeB", 1), "Body Shape B (Sigma)", 0.0f, 1.0f, 0.5f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("bodySpread", 1), "Stereo Body Spread", 0.0f, 100.0f, 100.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID("bodyPhaseInvertB", 1), "Phase Invert Right", false));
+
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("quackReduction", 1), "Anti-Quack Inertia", 0.0f, 100.0f, 60.0f));
 
@@ -159,6 +178,8 @@ void CyberAcousticProcessor::prepareToPlay(double sampleRate, int /*samplesPerBl
 {
     dspEngineLeft.init((float)sampleRate);
     dspEngineRight.init((float)sampleRate);
+    smoothedSpread = 1.0f;
+    currentPhaseB = 1.0f;
 }
 
 void CyberAcousticProcessor::releaseResources()
@@ -198,6 +219,19 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     int bodyType = (int)apvts.getRawParameterValue("bodyType")->load();
     float bodySize = apvts.getRawParameterValue("bodySize")->load();
     float bodyShape = apvts.getRawParameterValue("bodyShape")->load();
+
+    bool bodyDualMode = apvts.getRawParameterValue("bodyDualMode")->load() > 0.5f;
+    int  bodyTypeA = bodyType;
+    float bodySizeA = bodySize;
+    float bodyShapeA = bodyShape;
+
+    int  bodyTypeB = (int)apvts.getRawParameterValue("bodyTypeB")->load();
+    float bodySizeB = apvts.getRawParameterValue("bodySizeB")->load();
+    float bodyShapeB = apvts.getRawParameterValue("bodyShapeB")->load();
+    float bodySpread = apvts.getRawParameterValue("bodySpread")->load() / 100.0f;
+    bool bodyPhaseInvertB = apvts.getRawParameterValue("bodyPhaseInvertB")->load() > 0.5f;
+    float targetPhaseB = bodyPhaseInvertB ? -1.0f : 1.0f;
+
     float quack = apvts.getRawParameterValue("quackReduction")->load() / 100.0f;
     float depth = apvts.getRawParameterValue("bodyDepth")->load() / 100.0f;
     float micOpenness = apvts.getRawParameterValue("micOpenness")->load() / 100.0f;
@@ -263,28 +297,61 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             inPeak = std::max(inPeak, std::max(std::abs(rawL), std::abs(rawR)));
             inSumSq += 0.5f * (rawL * rawL + rawR * rawR);
 
-            float sL = rawL;
-            float sR = rawR;
-            float dummy1 = 0.0f, dummy2 = 0.0f;
+            float outWetL = 0.0f, outWetR = 0.0f;
 
-            float l = 0.0f, r = 0.0f;
-            dspEngineLeft.process(sL, l, dummy1,
-                                  denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
-                                  quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
-                                  eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
-                                  width, bodyType, bodySize, bodyShape,
-                                  revMix, revDecay, revSize, revTone, revType, gainLin);
-            dspEngineRight.process(sR, dummy2, r,
-                                   denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
-                                   quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
-                                   eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
-                                   width, bodyType, bodySize, bodyShape,
-                                   revMix, revDecay, revSize, revTone, revType, gainLin);
+            if (!bodyDualMode) {
+                float dummy1 = 0.0f, dummy2 = 0.0f;
+                float l = 0.0f, r = 0.0f;
+                dspEngineLeft.process(rawL, l, dummy1,
+                                      denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
+                                      quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
+                                      eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
+                                      width, bodyTypeA, bodySizeA, bodyShapeA,
+                                      revMix, revDecay, revSize, revTone, revType, gainLin);
+                dspEngineRight.process(rawR, dummy2, r,
+                                       denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
+                                       quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
+                                       eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
+                                       width, bodyTypeA, bodySizeA, bodyShapeA,
+                                       revMix, revDecay, revSize, revTone, revType, gainLin);
 
-            float mid = 0.5f * (l + r);
-            float side = 0.5f * (l - r) * width;
-            float outWetL = mid + side;
-            float outWetR = mid - side;
+                float mid = 0.5f * (l + r);
+                float side = 0.5f * (l - r) * width;
+                outWetL = mid + side;
+                outWetR = mid - side;
+            } else {
+                currentPhaseB = currentPhaseB * 0.995f + targetPhaseB * 0.005f;
+                smoothedSpread = smoothedSpread * 0.995f + bodySpread * 0.005f;
+
+                float sigA = dspEngineLeft.processMonoBody(rawL,
+                                                          denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
+                                                          quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
+                                                          eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
+                                                          bodyTypeA, bodySizeA, bodyShapeA);
+                float sigB = dspEngineRight.processMonoBody(rawR,
+                                                           denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
+                                                           quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
+                                                           eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
+                                                           bodyTypeB, bodySizeB, bodyShapeB);
+
+                sigB *= currentPhaseB;
+
+                float panAngle = smoothedSpread * 0.785398163f; // 0 .. pi/4
+                float g1 = std::sin(0.785398163f + panAngle);
+                float g2 = std::sin(0.785398163f - panAngle);
+
+                float sL = sigA * g1 + sigB * g2;
+                float sR = sigA * g2 + sigB * g1;
+
+                float mid = 0.5f * (sL + sR);
+                float side = 0.5f * (sL - sR) * width;
+                float dryL = mid + side;
+                float dryR = mid - side;
+
+                dspEngineLeft.processStereoReverb(dryL, dryR, revSize, bodyShapeA, revTone, revDecay, revMix, revType, outWetL, outWetR);
+                outWetL *= gainLin;
+                outWetR *= gainLin;
+            }
 
             wetSumSq += 0.5f * (outWetL * outWetL + outWetR * outWetR);
 
@@ -331,25 +398,67 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             inPeak = std::max(inPeak, std::abs(guitarMono));
             inSumSq += guitarMono * guitarMono;
 
-            // Process mono acoustic guitar through fluid space cavity & stereo mic imager
-            float l = 0.0f, r = 0.0f;
-            dspEngineLeft.process(guitarMono, l, r,
-                                  denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
-                                  quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
-                                  eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
-                                  width, bodyType, bodySize, bodyShape,
-                                  revMix, revDecay, revSize, revTone, revType, gainLin);
+            float outWetL = 0.0f, outWetR = 0.0f;
 
-            wetSumSq += 0.5f * (l * l + r * r);
+            if (!bodyDualMode) {
+                // Single Mono Body Emulation (Default / Backwards Compatible)
+                dspEngineLeft.process(guitarMono, outWetL, outWetR,
+                                      denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
+                                      quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
+                                      eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
+                                      width, bodyTypeA, bodySizeA, bodyShapeA,
+                                      revMix, revDecay, revSize, revTone, revType, gainLin);
+            } else {
+                // Dual Stereo Body Split (Left: Body A, Right: Body B + Phase Invert + Stereo Spread)
+                currentPhaseB = currentPhaseB * 0.995f + targetPhaseB * 0.005f;
+                smoothedSpread = smoothedSpread * 0.995f + bodySpread * 0.005f;
 
-            if (totalNumOutputChannels >= 2) {
-                if (outL) outL[n] = l;
-                if (outR) outR[n] = r;
-            } else if (totalNumOutputChannels == 1) {
-                if (outL) outL[n] = 0.5f * (l + r);
+                float sigA = dspEngineLeft.processMonoBody(guitarMono,
+                                                          denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
+                                                          quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
+                                                          eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
+                                                          bodyTypeA, bodySizeA, bodyShapeA);
+
+                float sigB = dspEngineRight.processMonoBody(guitarMono,
+                                                           denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
+                                                           quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
+                                                           eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
+                                                           bodyTypeB, bodySizeB, bodyShapeB);
+
+                // Polarity Inversion on Right Body (Acoustic Widening Trick)
+                sigB *= currentPhaseB;
+
+                // Constant-Power Cross-Spread Panning
+                float panAngle = smoothedSpread * 0.785398163f; // 0 .. pi/4
+                float g1 = std::sin(0.785398163f + panAngle);
+                float g2 = std::sin(0.785398163f - panAngle);
+
+                float sL = sigA * g1 + sigB * g2;
+                float sR = sigA * g2 + sigB * g1;
+
+                // Stereo Width (M/S Adjust)
+                float mid = 0.5f * (sL + sR);
+                float side = 0.5f * (sL - sR) * width;
+                float dryL = mid + side;
+                float dryR = mid - side;
+
+                // True Stereo Modulated Reverb Space
+                dspEngineLeft.processStereoReverb(dryL, dryR, revSize, bodyShapeA, revTone, revDecay, revMix, revType, outWetL, outWetR);
+
+                outWetL *= gainLin;
+                outWetR *= gainLin;
             }
 
-            maxAbs = std::max(maxAbs, std::max(std::abs(l), std::abs(r)));
+            wetSumSq += 0.5f * (outWetL * outWetL + outWetR * outWetR);
+
+            if (totalNumOutputChannels >= 2) {
+                if (outL) outL[n] = outWetL;
+                if (outR) outR[n] = outWetR;
+            } else if (totalNumOutputChannels == 1) {
+                if (outL) outL[n] = 0.5f * (outWetL + outWetR);
+            }
+
+            maxAbs = std::max(maxAbs, std::max(std::abs(outWetL), std::abs(outWetR)));
         }
     }
 

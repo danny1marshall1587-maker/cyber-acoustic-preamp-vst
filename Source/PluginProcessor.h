@@ -55,5 +55,8 @@ private:
     float wetRmsFiltered = 0.0f;
     float targetMatchedGain = 1.0f;
 
+    float smoothedSpread = 1.0f;
+    float currentPhaseB = 1.0f;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CyberAcousticProcessor)
 };

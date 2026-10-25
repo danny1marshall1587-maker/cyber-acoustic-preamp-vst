@@ -14,16 +14,24 @@ public:
         stopTimer();
     }
 
-    void setParameters(int bodyType, float bodySize, float bodyShape, float audioLevel) {
+    void setParameters(int bodyType, float bodySize, float bodyShape,
+                       bool dualMode, int bodyTypeB, float bodySizeB, float bodyShapeB,
+                       float spread, bool phaseInvertB, float audioLevel) {
         currentBodyType = bodyType;
         currentBodySize = bodySize;
         currentBodyShape = bodyShape;
+        isDualMode = dualMode;
+        currentBodyTypeB = bodyTypeB;
+        currentBodySizeB = bodySizeB;
+        currentBodyShapeB = bodyShapeB;
+        currentSpread = spread;
+        currentPhaseInvertB = phaseInvertB;
         currentLevel = std::max(currentLevel * 0.85f, audioLevel); // Decay envelope
         repaint();
     }
 
     void paint(juce::Graphics& g) override {
-        auto bounds = getLocalBounds().toFloat().reduced(8.0f);
+        auto bounds = getLocalBounds().toFloat().reduced(6.0f);
         auto center = bounds.getCentre();
 
         // 1. Dark wood grain chassis background
@@ -32,94 +40,102 @@ public:
         g.setColour(juce::Colour(0xff2d2825));
         g.drawRoundedRectangle(bounds, 8.0f, 1.5f);
 
-        // 2. Draw Guitar Silhouette based on body type
-        float scale = std::clamp(currentBodySize, 0.7f, 1.4f);
-        float w = (bounds.getWidth() * 0.42f) * scale;
-        float h = (bounds.getHeight() * 0.75f) * scale;
+        if (!isDualMode) {
+            // ================================================================
+            // Single Mono Body Emulation View
+            // ================================================================
+            float scale = std::clamp(currentBodySize, 0.7f, 1.4f);
+            float w = (bounds.getWidth() * 0.42f) * scale;
+            float h = (bounds.getHeight() * 0.72f) * scale;
 
-        juce::Path guitarBody;
-        createGuitarPath(guitarBody, center.x, center.y, w, h, currentBodyType, currentBodyShape);
+            drawGuitarInstance(g, center.x, center.y, w, h, currentBodyType, currentBodyShape,
+                               juce::Colour(0xff573b22), juce::Colour(0xff24170d),
+                               juce::Colour(0xffedd9be), false);
 
-        // Fill with warm glowing spruce / mahogany gradient
-        juce::ColourGradient woodFill(juce::Colour(0xff573b22), center.x, center.y - h * 0.4f,
-                                     juce::Colour(0xff24170d), center.x, center.y + h * 0.4f, false);
-        g.setGradientFill(woodFill);
-        g.fillPath(guitarBody);
+            // Header & Footer Labels
+            g.setColour(juce::Colour(0xffedd9be));
+            g.setFont(juce::FontOptions(13.0f));
+            g.drawText(getBodyName(currentBodyType), bounds.removeFromTop(20.0f), juce::Justification::centred, false);
 
-        // Subtle binding rim
-        g.setColour(juce::Colour(0xffedd9be));
-        g.strokePath(guitarBody, juce::PathStrokeType(1.8f));
-
-        // 3. Soundhole / F-holes & Rosette
-        if (currentBodyType == 6 || currentBodyType == 8) {
-            // Archtop & F-Style Mandolin with twin f-holes
-            float fLen = (currentBodyType == 8) ? h * 0.28f : h * 0.35f;
-            float fOffset = (currentBodyType == 8) ? w * 0.24f : w * 0.28f;
-            drawFHole(g, center.x - fOffset, center.y - h * 0.05f, fLen, false);
-            drawFHole(g, center.x + fOffset, center.y - h * 0.05f, fLen, true);
-
-            // Floating Bridge Assembly
-            float bridgeW = (currentBodyType == 8) ? w * 0.32f : w * 0.45f;
-            float bridgeH = h * 0.065f;
-            float bridgeY = center.y + h * 0.18f;
-            g.setColour(juce::Colour(0xff120d09)); // Ebony bridge
-            g.fillRoundedRectangle(center.x - bridgeW * 0.5f, bridgeY, bridgeW, bridgeH, 2.5f);
-            // Thumbwheels / Bone insert
-            g.setColour(juce::Colour(0xffd4974f));
-            g.fillEllipse(center.x - bridgeW * 0.35f, bridgeY + 2.0f, 4.0f, 4.0f);
-            g.fillEllipse(center.x + bridgeW * 0.35f - 4.0f, bridgeY + 2.0f, 4.0f, 4.0f);
+            g.setColour(juce::Colour(0xffa19284));
+            g.setFont(juce::FontOptions(10.5f));
+            g.drawText(getBodySpec(currentBodyType), bounds.removeFromBottom(18.0f), juce::Justification::centred, false);
         } else {
-            // Round / Oval Soundhole
-            float holeRadius = (currentBodyType == 7) ? w * 0.16f : w * 0.19f;
-            float holeY = center.y - h * 0.12f;
+            // ================================================================
+            // Dual Stereo Body Split View (Left: Body A, Right: Body B)
+            // ================================================================
+            float cxA = bounds.getX() + bounds.getWidth() * 0.27f;
+            float cxB = bounds.getX() + bounds.getWidth() * 0.73f;
 
-            // Animated acoustic pressure ripples
-            if (currentLevel > 0.01f) {
-                float rippleRadius = holeRadius + currentLevel * 45.0f * (1.0f + animationPhase);
-                g.setColour(juce::Colour(0xffd4974f).withAlpha(std::clamp((1.0f - animationPhase) * currentLevel * 0.8f, 0.0f, 1.0f)));
-                g.drawEllipse(center.x - rippleRadius, holeY - rippleRadius * 0.9f, rippleRadius * 2.0f, rippleRadius * 1.8f, 1.5f);
+            float scaleA = std::clamp(currentBodySize, 0.7f, 1.3f);
+            float scaleB = std::clamp(currentBodySizeB, 0.7f, 1.3f);
+
+            float wA = (bounds.getWidth() * 0.29f) * scaleA;
+            float hA = (bounds.getHeight() * 0.62f) * scaleA;
+
+            float wB = (bounds.getWidth() * 0.29f) * scaleB;
+            float hB = (bounds.getHeight() * 0.62f) * scaleB;
+
+            float bodyY = center.y + 2.0f;
+
+            // Draw Body A (Left - Spruce Tone)
+            drawGuitarInstance(g, cxA, bodyY, wA, hA, currentBodyType, currentBodyShape,
+                               juce::Colour(0xff573b22), juce::Colour(0xff24170d),
+                               juce::Colour(0xffedd9be), false);
+
+            // Draw Body B (Right - Deep Rosewood Tone with Phase Pill)
+            drawGuitarInstance(g, cxB, bodyY, wB, hB, currentBodyTypeB, currentBodyShapeB,
+                               juce::Colour(0xff4a1f1a), juce::Colour(0xff1c0d0a),
+                               juce::Colour(0xffe29d72), currentPhaseInvertB);
+
+            // Center Stereo Spread Gauge
+            auto midArea = juce::Rectangle<float>(cxA + wA * 0.5f + 2.0f, center.y - 14.0f,
+                                                 (cxB - wB * 0.5f) - (cxA + wA * 0.5f) - 4.0f, 28.0f);
+            if (midArea.getWidth() > 20.0f) {
+                g.setColour(juce::Colour(0x33d4974f));
+                g.fillRoundedRectangle(midArea, 4.0f);
+                g.setColour(juce::Colour(0xffd4974f));
+                g.setFont(juce::FontOptions(9.5f));
+                g.drawText("SPREAD", midArea.removeFromTop(12.0f), juce::Justification::centred, false);
+                g.drawText(juce::String((int)currentSpread) + "%", midArea, juce::Justification::centred, false);
             }
 
-            // Rosette concentric rings
-            g.setColour(juce::Colour(0xff916839));
-            g.drawEllipse(center.x - (holeRadius + 6.0f), holeY - (holeRadius + 6.0f), (holeRadius + 6.0f) * 2.0f, (holeRadius + 6.0f) * 2.0f, 2.0f);
-            g.setColour(juce::Colour(0xffeeddbb));
-            g.drawEllipse(center.x - (holeRadius + 3.0f), holeY - (holeRadius + 3.0f), (holeRadius + 3.0f) * 2.0f, (holeRadius + 3.0f) * 2.0f, 1.0f);
+            // Top Header Labels (A / B)
+            auto topArea = bounds.removeFromTop(20.0f);
+            int halfW = (int)(topArea.getWidth() / 2);
+            g.setFont(juce::FontOptions(11.5f));
 
-            // Inner dark soundhole cavity
-            g.setColour(juce::Colour(0xff0a0908));
-            if (currentBodyType == 7) {
-                // Selmer Petite Bouche Oval
-                g.fillEllipse(center.x - holeRadius * 1.25f, holeY - holeRadius * 0.75f, holeRadius * 2.5f, holeRadius * 1.5f);
+            g.setColour(juce::Colour(0xffedd9be));
+            g.drawText("L: " + getShortBodyName(currentBodyType), topArea.removeFromLeft(halfW), juce::Justification::centredLeft, false);
+
+            g.setColour(juce::Colour(0xffe29d72));
+            g.drawText("R: " + getShortBodyName(currentBodyTypeB), topArea, juce::Justification::centredRight, false);
+
+            // Bottom Footer Status
+            auto bottomArea = bounds.removeFromBottom(18.0f);
+            g.setFont(juce::FontOptions(10.0f));
+            if (currentPhaseInvertB) {
+                g.setColour(juce::Colour(0xfff59e0b));
+                g.drawText("DUAL STEREO • RIGHT POLARITY INVERTED [WIDE ACOUSTIC TRICK]", bottomArea, juce::Justification::centred, false);
             } else {
-                g.fillEllipse(center.x - holeRadius, holeY - holeRadius, holeRadius * 2.0f, holeRadius * 2.0f);
+                g.setColour(juce::Colour(0xffa19284));
+                g.drawText("DUAL STEREO • DUAL DISCRETE ACOUSTIC CAVITIES", bottomArea, juce::Justification::centred, false);
             }
-
-            // Bridge & Saddle Assembly
-            float bridgeW = w * 0.45f;
-            float bridgeH = h * 0.08f;
-            float bridgeY = center.y + h * 0.22f;
-            g.setColour(juce::Colour(0xff120d09)); // Dark Rosewood / Ebony
-            g.fillRoundedRectangle(center.x - bridgeW * 0.5f, bridgeY, bridgeW, bridgeH, 3.0f);
-            // White Bone Saddle
-            g.setColour(juce::Colour(0xfff0eee6));
-            g.fillRoundedRectangle(center.x - bridgeW * 0.35f, bridgeY + bridgeH * 0.3f, bridgeW * 0.70f, 2.5f, 1.0f);
         }
-
-        // 4. Header Label & Acoustic Resonance Spec
-        g.setColour(juce::Colour(0xffedd9be));
-        g.setFont(juce::FontOptions(13.0f));
-        g.drawText(getBodyName(currentBodyType), bounds.removeFromTop(22.0f), juce::Justification::centred, false);
-
-        g.setColour(juce::Colour(0xffa19284));
-        g.setFont(juce::FontOptions(10.5f));
-        g.drawText(getBodySpec(currentBodyType), bounds.removeFromBottom(20.0f), juce::Justification::centred, false);
     }
 
 private:
     int currentBodyType = 0;
     float currentBodySize = 1.0f;
     float currentBodyShape = 0.5f;
+
+    bool isDualMode = false;
+    int currentBodyTypeB = 2;
+    float currentBodySizeB = 1.0f;
+    float currentBodyShapeB = 0.5f;
+    float currentSpread = 100.0f;
+    bool currentPhaseInvertB = false;
+
     float currentLevel = 0.0f;
     float animationPhase = 0.0f;
 
@@ -127,6 +143,89 @@ private:
         animationPhase += 0.06f;
         if (animationPhase > 1.0f) animationPhase = 0.0f;
         if (currentLevel > 0.005f) repaint();
+    }
+
+    void drawGuitarInstance(juce::Graphics& g, float cx, float cy, float w, float h,
+                            int type, float shape, juce::Colour topCol, juce::Colour botCol,
+                            juce::Colour rimCol, bool showPhaseBadge) {
+        juce::Path guitarBody;
+        createGuitarPath(guitarBody, cx, cy, w, h, type, shape);
+
+        // Fill with wood gradient
+        juce::ColourGradient woodFill(topCol, cx, cy - h * 0.4f, botCol, cx, cy + h * 0.4f, false);
+        g.setGradientFill(woodFill);
+        g.fillPath(guitarBody);
+
+        // Binding rim
+        g.setColour(rimCol);
+        g.strokePath(guitarBody, juce::PathStrokeType(1.5f));
+
+        if (type == 6 || type == 8) {
+            // Archtop & F-Style Mandolin with twin f-holes
+            float fLen = (type == 8) ? h * 0.28f : h * 0.35f;
+            float fOffset = (type == 8) ? w * 0.24f : w * 0.28f;
+            drawFHole(g, cx - fOffset, cy - h * 0.05f, fLen, false);
+            drawFHole(g, cx + fOffset, cy - h * 0.05f, fLen, true);
+
+            // Floating Bridge Assembly
+            float bridgeW = (type == 8) ? w * 0.32f : w * 0.45f;
+            float bridgeH = h * 0.065f;
+            float bridgeY = cy + h * 0.18f;
+            g.setColour(juce::Colour(0xff120d09)); // Ebony bridge
+            g.fillRoundedRectangle(cx - bridgeW * 0.5f, bridgeY, bridgeW, bridgeH, 2.5f);
+            // Thumbwheels
+            g.setColour(juce::Colour(0xffd4974f));
+            g.fillEllipse(cx - bridgeW * 0.35f, bridgeY + 2.0f, 3.5f, 3.5f);
+            g.fillEllipse(cx + bridgeW * 0.35f - 3.5f, bridgeY + 2.0f, 3.5f, 3.5f);
+        } else {
+            // Round / Oval Soundhole
+            float holeRadius = (type == 7) ? w * 0.16f : w * 0.19f;
+            float holeY = cy - h * 0.12f;
+
+            // Animated acoustic pressure ripples
+            if (currentLevel > 0.01f) {
+                float rippleRadius = holeRadius + currentLevel * 35.0f * (1.0f + animationPhase);
+                g.setColour(rimCol.withAlpha(std::clamp((1.0f - animationPhase) * currentLevel * 0.8f, 0.0f, 1.0f)));
+                g.drawEllipse(cx - rippleRadius, holeY - rippleRadius * 0.9f, rippleRadius * 2.0f, rippleRadius * 1.8f, 1.2f);
+            }
+
+            // Rosette concentric rings
+            g.setColour(juce::Colour(0xff916839));
+            g.drawEllipse(cx - (holeRadius + 5.0f), holeY - (holeRadius + 5.0f), (holeRadius + 5.0f) * 2.0f, (holeRadius + 5.0f) * 2.0f, 1.5f);
+            g.setColour(rimCol);
+            g.drawEllipse(cx - (holeRadius + 2.5f), holeY - (holeRadius + 2.5f), (holeRadius + 2.5f) * 2.0f, (holeRadius + 2.5f) * 2.0f, 1.0f);
+
+            // Inner dark soundhole cavity
+            g.setColour(juce::Colour(0xff0a0908));
+            if (type == 7) {
+                g.fillEllipse(cx - holeRadius * 1.25f, holeY - holeRadius * 0.75f, holeRadius * 2.5f, holeRadius * 1.5f);
+            } else {
+                g.fillEllipse(cx - holeRadius, holeY - holeRadius, holeRadius * 2.0f, holeRadius * 2.0f);
+            }
+
+            // Bridge & Saddle Assembly
+            float bridgeW = w * 0.45f;
+            float bridgeH = h * 0.08f;
+            float bridgeY = cy + h * 0.22f;
+            g.setColour(juce::Colour(0xff120d09)); // Dark Rosewood / Ebony
+            g.fillRoundedRectangle(cx - bridgeW * 0.5f, bridgeY, bridgeW, bridgeH, 3.0f);
+            // White Bone Saddle
+            g.setColour(juce::Colour(0xfff0eee6));
+            g.fillRoundedRectangle(cx - bridgeW * 0.35f, bridgeY + bridgeH * 0.3f, bridgeW * 0.70f, 2.0f, 1.0f);
+        }
+
+        // Phase Inversion Badge (on Right Channel)
+        if (showPhaseBadge) {
+            float badgeW = 48.0f;
+            float badgeH = 15.0f;
+            auto badgeArea = juce::Rectangle<float>(cx - badgeW * 0.5f, cy + h * 0.38f, badgeW, badgeH);
+            g.setColour(juce::Colour(0xddb45309)); // Glowing dark amber
+            g.fillRoundedRectangle(badgeArea, 3.0f);
+            g.setColour(juce::Colour(0xfffef08a));
+            g.drawRoundedRectangle(badgeArea, 3.0f, 1.0f);
+            g.setFont(juce::FontOptions(9.0f));
+            g.drawText("Φ 180° INV", badgeArea, juce::Justification::centred, false);
+        }
     }
 
     void createGuitarPath(juce::Path& p, float cx, float cy, float w, float h, int type, float shape) {
@@ -137,7 +236,6 @@ private:
             float mHalfW = halfW * 0.85f;
             float mHalfH = halfH * 0.85f;
             p.startNewSubPath(cx, cy - mHalfH);
-            // Right upper scroll / point
             p.lineTo(cx + mHalfW * 0.65f, cy - mHalfH * 0.95f);
             p.lineTo(cx + mHalfW * 0.92f, cy - mHalfH * 0.70f); // Upper Point
             p.cubicTo(cx + mHalfW * 0.80f, cy - mHalfH * 0.35f, cx + mHalfW, cy + mHalfH * 0.15f, cx + mHalfW * 0.90f, cy + mHalfH * 0.75f);
@@ -163,16 +261,11 @@ private:
         }
 
         p.startNewSubPath(cx, cy - halfH); // Top neck block
-        // Right Upper Bout
         p.cubicTo(cx + upperWidth, cy - halfH * 0.85f, cx + upperWidth, cy - halfH * 0.35f, cx + waistWidth, cy - halfH * 0.05f);
-        // Right Waist & Lower Bout
         p.cubicTo(cx + waistWidth * 0.85f, cy + halfH * 0.12f, cx + lowerWidth, cy + halfH * 0.35f, cx + lowerWidth * 0.85f, cy + halfH * 0.85f);
-        // Bottom End Block
         p.cubicTo(cx + lowerWidth * 0.50f, cy + halfH, cx + halfW * 0.2f, cy + halfH, cx, cy + halfH);
-        // Left Lower Bout
         p.cubicTo(cx - halfW * 0.2f, cy + halfH, cx - lowerWidth * 0.50f, cy + halfH, cx - lowerWidth * 0.85f, cy + halfH * 0.85f);
         p.cubicTo(cx - lowerWidth, cy + halfH * 0.35f, cx - waistWidth * 0.85f, cy + halfH * 0.12f, cx - waistWidth, cy - halfH * 0.05f);
-        // Left Upper Bout
         p.cubicTo(cx - upperWidth, cy - halfH * 0.35f, cx - upperWidth, cy - halfH * 0.85f, cx, cy - halfH);
         p.closeSubPath();
     }
@@ -200,6 +293,21 @@ private:
             case 7: return "Selmer Maccaferri";
             case 8: return "F-Style Mandolin (F-5)";
             default: return "Custom Acoustic";
+        }
+    }
+
+    static juce::String getShortBodyName(int type) {
+        switch (type) {
+            case 0: return "Dreadnought";
+            case 1: return "J-200 Jumbo";
+            case 2: return "000 / OM";
+            case 3: return "Auditorium";
+            case 4: return "Parlor";
+            case 5: return "Classical";
+            case 6: return "Archtop";
+            case 7: return "Selmer";
+            case 8: return "F-5 Mandolin";
+            default: return "Custom";
         }
     }
 

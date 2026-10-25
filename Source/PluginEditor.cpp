@@ -17,6 +17,8 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
     presetSelector.addItem("Preset: Takamine Piezo Rescue", 8);
     presetSelector.addItem("Preset: Martin D-45 Deep Air", 9);
     presetSelector.addItem("Preset: Bluegrass F-5 Mandolin Chop", 10);
+    presetSelector.addItem("Preset: Dual Stereo - Dread & OM Split", 11);
+    presetSelector.addItem("Preset: Dual Stereo - Jumbo & Mandolin", 12);
     presetSelector.setSelectedId(1, juce::dontSendNotification);
     presetSelector.onChange = [this]() {
         loadPreset(presetSelector.getSelectedId());
@@ -95,9 +97,8 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
     airShimmerAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.apvts, "airShimmer", airShimmerSlider);
 
-    // 3. Fluid Acoustic Cavity
-    addAndMakeVisible(bodyTypeBox);
-    bodyTypeBox.addItemList({
+    // 3. Fluid Acoustic Cavity & Dual Stereo Controls
+    juce::StringArray bodyNames = {
         "Dreadnought (D-28)",
         "Jumbo (J-200)",
         "Orchestra (000/OM)",
@@ -107,23 +108,51 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
         "Acoustic Archtop",
         "Selmer Maccaferri",
         "F-Style Mandolin (F-5)"
-    }, 1);
+    };
+
+    addAndMakeVisible(bodyTypeBox);
+    bodyTypeBox.addItemList(bodyNames, 1);
     bodyTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         audioProcessor.apvts, "bodyType", bodyTypeBox);
 
+    setupToggle(dualModeButton, "DUAL STEREO");
+    dualModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        audioProcessor.apvts, "bodyDualMode", dualModeButton);
+
+    setupToggle(phaseInvertButton, "Φ INV R");
+    phaseInvertAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        audioProcessor.apvts, "bodyPhaseInvertB", phaseInvertButton);
+
+    addAndMakeVisible(bodyTypeBBox);
+    bodyTypeBBox.addItemList(bodyNames, 1);
+    bodyTypeBAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        audioProcessor.apvts, "bodyTypeB", bodyTypeBBox);
+
     addAndMakeVisible(visualizer);
 
-    setupRotary(bodySizeSlider, bodySizeLabel, "BODY SIZE", "x");
+    setupRotary(bodySizeSlider, bodySizeLabel, "SIZE A", "x");
     bodySizeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.apvts, "bodySize", bodySizeSlider);
 
-    setupRotary(bodyShapeSlider, bodyShapeLabel, "SHAPE (SIGMA)", "");
+    setupRotary(bodyShapeSlider, bodyShapeLabel, "SHAPE A", "");
     bodyShapeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.apvts, "bodyShape", bodyShapeSlider);
 
-    setupRotary(bodyDepthSlider, bodyDepthLabel, "CAVITY DEPTH", "%");
+    setupRotary(bodyDepthSlider, bodyDepthLabel, "DEPTH", "%");
     bodyDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.apvts, "bodyDepth", bodyDepthSlider);
+
+    setupRotary(bodySizeBSlider, bodySizeBLabel, "SIZE B", "x");
+    bodySizeBAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "bodySizeB", bodySizeBSlider);
+
+    setupRotary(bodyShapeBSlider, bodyShapeBLabel, "SHAPE B", "");
+    bodyShapeBAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "bodyShapeB", bodyShapeBSlider);
+
+    setupRotary(bodySpreadSlider, bodySpreadLabel, "SPREAD", "%");
+    bodySpreadAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "bodySpread", bodySpreadSlider);
 
     // 3B. Fluid Air & Close-Mic Radiation (Simulates Close Mic vs Pickup Openness)
     setupRotary(micOpennessSlider, micOpennessLabel, "MIC OPENNESS", "%");
@@ -225,12 +254,34 @@ CyberAcousticEditor::~CyberAcousticEditor()
 
 void CyberAcousticEditor::timerCallback()
 {
+    bool dual = dualModeButton.getToggleState();
+    bodyTypeBBox.setEnabled(dual);
+    phaseInvertButton.setEnabled(dual);
+    bodySizeBSlider.setEnabled(dual);
+    bodyShapeBSlider.setEnabled(dual);
+    bodySpreadSlider.setEnabled(dual);
+
+    juce::Colour activeLabelCol(0xffd5c4b1);
+    juce::Colour dimmedLabelCol(0xff55483d);
+    bodySizeBLabel.setColour(juce::Label::textColourId, dual ? activeLabelCol : dimmedLabelCol);
+    bodyShapeBLabel.setColour(juce::Label::textColourId, dual ? activeLabelCol : dimmedLabelCol);
+    bodySpreadLabel.setColour(juce::Label::textColourId, dual ? activeLabelCol : dimmedLabelCol);
+
     int bodyType = bodyTypeBox.getSelectedItemIndex();
     float bodySize = (float)bodySizeSlider.getValue();
     float bodyShape = (float)bodyShapeSlider.getValue();
+
+    int bodyTypeB = bodyTypeBBox.getSelectedItemIndex();
+    float bodySizeB = (float)bodySizeBSlider.getValue();
+    float bodyShapeB = (float)bodyShapeBSlider.getValue();
+    float spread = (float)bodySpreadSlider.getValue();
+    bool phaseInvertB = phaseInvertButton.getToggleState();
+
     float audioLevel = audioProcessor.getCurrentAudioLevel();
 
-    visualizer.setParameters(bodyType, bodySize, bodyShape, audioLevel);
+    visualizer.setParameters(bodyType, bodySize, bodyShape,
+                             dual, bodyTypeB, bodySizeB, bodyShapeB,
+                             spread, phaseInvertB, audioLevel);
     inputMeter.setLevels(audioProcessor.getInputRmsDb(), audioProcessor.getInputPeakDb());
 }
 
@@ -241,8 +292,18 @@ void CyberAcousticEditor::loadPreset(int id)
             param->setValueNotifyingHost(param->convertTo0to1(value));
     };
 
+    auto resetDual = [&]() {
+        setVal("bodyDualMode", 0.0f);
+        setVal("bodyTypeB", 2);
+        setVal("bodySizeB", 1.0f);
+        setVal("bodyShapeB", 0.5f);
+        setVal("bodySpread", 100.0f);
+        setVal("bodyPhaseInvertB", 0.0f);
+    };
+
     switch (id) {
         case 1: // Dreadnought Studio Flatpicker
+            resetDual();
             setVal("bodyType", 0); setVal("bodySize", 1.0f); setVal("bodyShape", 0.82f);
             setVal("denoiseAmount", 50.0f); setVal("denoiseThreshold", -80.0f);
             setVal("quackReduction", 65.0f); setVal("bodyDepth", 70.0f); setVal("deFizz", 60.0f);
@@ -255,6 +316,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("reverbMix", 18.0f); setVal("reverbDecay", 35.0f); setVal("reverbSize", 1.0f); setVal("reverbTone", 6000.0f);
             break;
         case 2: // Modern Fingerstyle OM
+            resetDual();
             setVal("bodyType", 2); setVal("bodySize", 0.95f); setVal("bodyShape", 0.42f);
             setVal("denoiseAmount", 55.0f); setVal("denoiseThreshold", -82.0f);
             setVal("quackReduction", 55.0f); setVal("bodyDepth", 60.0f); setVal("deFizz", 50.0f);
@@ -267,6 +329,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("reverbMix", 26.0f); setVal("reverbDecay", 55.0f); setVal("reverbSize", 1.25f); setVal("reverbTone", 7500.0f);
             break;
         case 3: // Cavernous J-200 Strumming
+            resetDual();
             setVal("bodyType", 1); setVal("bodySize", 1.25f); setVal("bodyShape", 0.65f);
             setVal("denoiseAmount", 60.0f); setVal("denoiseThreshold", -78.0f);
             setVal("quackReduction", 75.0f); setVal("bodyDepth", 85.0f); setVal("deFizz", 65.0f);
@@ -279,6 +342,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("reverbMix", 32.0f); setVal("reverbDecay", 70.0f); setVal("reverbSize", 1.8f); setVal("reverbTone", 5000.0f);
             break;
         case 4: // Delta Blues Parlor
+            resetDual();
             setVal("bodyType", 4); setVal("bodySize", 0.80f); setVal("bodyShape", 0.25f);
             setVal("denoiseAmount", 40.0f); setVal("denoiseThreshold", -75.0f);
             setVal("quackReduction", 45.0f); setVal("bodyDepth", 50.0f); setVal("deFizz", 40.0f);
@@ -291,6 +355,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("reverbMix", 12.0f); setVal("reverbDecay", 22.0f); setVal("reverbSize", 0.7f); setVal("reverbTone", 4500.0f);
             break;
         case 5: // Concert Classical Nylon
+            resetDual();
             setVal("bodyType", 5); setVal("bodySize", 0.92f); setVal("bodyShape", 0.35f);
             setVal("denoiseAmount", 45.0f); setVal("denoiseThreshold", -84.0f);
             setVal("quackReduction", 40.0f); setVal("bodyDepth", 65.0f); setVal("deFizz", 45.0f);
@@ -303,6 +368,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("reverbMix", 28.0f); setVal("reverbDecay", 60.0f); setVal("reverbSize", 1.4f); setVal("reverbTone", 6500.0f);
             break;
         case 6: // Acoustic Jazz Archtop
+            resetDual();
             setVal("bodyType", 6); setVal("bodySize", 1.05f); setVal("bodyShape", 0.18f);
             setVal("denoiseAmount", 50.0f); setVal("denoiseThreshold", -80.0f);
             setVal("quackReduction", 50.0f); setVal("bodyDepth", 45.0f); setVal("deFizz", 55.0f);
@@ -315,6 +381,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("reverbMix", 16.0f); setVal("reverbDecay", 30.0f); setVal("reverbSize", 0.9f); setVal("reverbTone", 5500.0f);
             break;
         case 7: // Gypsy Django Selmer
+            resetDual();
             setVal("bodyType", 7); setVal("bodySize", 1.0f); setVal("bodyShape", 0.12f);
             setVal("denoiseAmount", 55.0f); setVal("denoiseThreshold", -80.0f);
             setVal("quackReduction", 60.0f); setVal("bodyDepth", 55.0f); setVal("deFizz", 60.0f);
@@ -327,6 +394,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("reverbMix", 20.0f); setVal("reverbDecay", 38.0f); setVal("reverbSize", 1.0f); setVal("reverbTone", 7000.0f);
             break;
         case 8: // Takamine Piezo Rescue (Maximum Boxiness Elimination & Breath)
+            resetDual();
             setVal("bodyType", 0); setVal("bodySize", 1.05f); setVal("bodyShape", 0.85f);
             setVal("denoiseAmount", 55.0f); setVal("denoiseThreshold", -80.0f);
             setVal("quackReduction", 75.0f); setVal("bodyDepth", 75.0f); setVal("deFizz", 65.0f);
@@ -339,6 +407,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("reverbMix", 22.0f); setVal("reverbDecay", 45.0f); setVal("reverbSize", 1.1f); setVal("reverbTone", 6500.0f);
             break;
         case 9: // Martin D-45 Deep Air (Huge Dreadnought Chest Warmth & Condenser Sparkle)
+            resetDual();
             setVal("bodyType", 0); setVal("bodySize", 1.0f); setVal("bodyShape", 0.82f);
             setVal("denoiseAmount", 50.0f); setVal("denoiseThreshold", -82.0f);
             setVal("quackReduction", 60.0f); setVal("bodyDepth", 80.0f); setVal("deFizz", 55.0f);
@@ -351,6 +420,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("reverbMix", 24.0f); setVal("reverbDecay", 50.0f); setVal("reverbSize", 1.3f); setVal("reverbTone", 7200.0f);
             break;
         case 10: // Bluegrass F-5 Mandolin Chop
+            resetDual();
             setVal("bodyType", 8); setVal("bodySize", 0.75f); setVal("bodyShape", 0.15f);
             setVal("denoiseAmount", 50.0f); setVal("denoiseThreshold", -82.0f);
             setVal("quackReduction", 70.0f); setVal("bodyDepth", 50.0f); setVal("deFizz", 55.0f);
@@ -361,6 +431,36 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("stereoWidth", 115.0f);
             setVal("reverbType", 0);
             setVal("reverbMix", 16.0f); setVal("reverbDecay", 28.0f); setVal("reverbSize", 0.85f); setVal("reverbTone", 6500.0f);
+            break;
+        case 11: // Dual Stereo - Dreadnought & OM Split (Wide Studio Acoustics)
+            setVal("bodyDualMode", 1.0f);
+            setVal("bodyType", 0); setVal("bodySize", 1.05f); setVal("bodyShape", 0.85f);
+            setVal("bodyTypeB", 2); setVal("bodySizeB", 0.95f); setVal("bodyShapeB", 0.40f);
+            setVal("bodySpread", 100.0f); setVal("bodyPhaseInvertB", 1.0f); // Polarity inverted for wide stereo illusion!
+            setVal("denoiseAmount", 50.0f); setVal("denoiseThreshold", -80.0f);
+            setVal("quackReduction", 60.0f); setVal("bodyDepth", 70.0f); setVal("deFizz", 55.0f);
+            setVal("airShimmer", 40.0f);
+            setVal("micOpenness", 85.0f); setVal("micAirSheen", 75.0f); setVal("micProximity", 70.0f);
+            setVal("eqLowGain", 1.0f); setVal("eqLowMidFreq", 450.0f); setVal("eqLowMidGain", -2.0f);
+            setVal("eqHighMidFreq", 3200.0f); setVal("eqHighMidGain", 1.5f); setVal("eqHighGain", 2.0f);
+            setVal("stereoWidth", 120.0f);
+            setVal("reverbType", 1); // Concert Hall
+            setVal("reverbMix", 24.0f); setVal("reverbDecay", 50.0f); setVal("reverbSize", 1.3f); setVal("reverbTone", 6500.0f);
+            break;
+        case 12: // Dual Stereo - Jumbo & Mandolin Split (Epic Acoustic Ensemble)
+            setVal("bodyDualMode", 1.0f);
+            setVal("bodyType", 1); setVal("bodySize", 1.20f); setVal("bodyShape", 0.65f); // Jumbo left
+            setVal("bodyTypeB", 8); setVal("bodySizeB", 0.80f); setVal("bodyShapeB", 0.20f); // F-5 Mandolin right
+            setVal("bodySpread", 95.0f); setVal("bodyPhaseInvertB", 0.0f);
+            setVal("denoiseAmount", 55.0f); setVal("denoiseThreshold", -80.0f);
+            setVal("quackReduction", 65.0f); setVal("bodyDepth", 75.0f); setVal("deFizz", 60.0f);
+            setVal("airShimmer", 45.0f);
+            setVal("micOpenness", 80.0f); setVal("micAirSheen", 70.0f); setVal("micProximity", 75.0f);
+            setVal("eqLowGain", 1.5f); setVal("eqLowMidFreq", 400.0f); setVal("eqLowMidGain", -2.5f);
+            setVal("eqHighMidFreq", 3000.0f); setVal("eqHighMidGain", 2.0f); setVal("eqHighGain", 2.5f);
+            setVal("stereoWidth", 130.0f);
+            setVal("reverbType", 0); // Studio Room
+            setVal("reverbMix", 20.0f); setVal("reverbDecay", 40.0f); setVal("reverbSize", 1.1f); setVal("reverbTone", 7000.0f);
             break;
     }
 }
@@ -402,7 +502,7 @@ void CyberAcousticEditor::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0xffd4974f));
     g.setFont(juce::FontOptions(11.5f));
     g.drawText("D-NOISE & TRANSDUCER", (int)mainArea.getX(), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
-    g.drawText("FLUID CAVITY & AIR MIC", (int)(mainArea.getX() + colW), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
+    g.drawText("FLUID CAVITY & DUAL STEREO", (int)(mainArea.getX() + colW), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
     g.drawText("STUDIO 4-BAND EQ", (int)(mainArea.getX() + colW * 2.0f), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
     g.drawText("FLUID REVERB & MASTER", (int)(mainArea.getX() + colW * 3.0f), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
 }
@@ -479,49 +579,79 @@ void CyberAcousticEditor::resized()
     airShimmerSlider.setBounds(asArea.reduced(6));
 
     // =========================================================================
-    // --- Column 2: FLUID ACOUSTIC CAVITY & AIR MIC ---
+    // --- Column 2: FLUID ACOUSTIC CAVITY & DUAL STEREO SPLIT ---
     // =========================================================================
     auto col2 = mainArea.removeFromLeft(colW).reduced(6);
     col2.removeFromTop(26);
 
-    bodyTypeBox.setBounds(col2.removeFromTop(28));
+    // Row 1: Dual Mode & Phase Invert Toggles
+    auto dualRow = col2.removeFromTop(24);
+    int dHalfW = dualRow.getWidth() / 2;
+    dualModeButton.setBounds(dualRow.removeFromLeft(dHalfW).reduced(2, 0));
+    phaseInvertButton.setBounds(dualRow.reduced(2, 0));
+    col2.removeFromTop(4);
+
+    // Row 2: Body Dropdown Selectors (Left Body A / Right Body B)
+    auto bodyBoxRow = col2.removeFromTop(26);
+    int bHalfW = bodyBoxRow.getWidth() / 2;
+    bodyTypeBox.setBounds(bodyBoxRow.removeFromLeft(bHalfW).reduced(2, 0));
+    bodyTypeBBox.setBounds(bodyBoxRow.reduced(2, 0));
     col2.removeFromTop(6);
 
-    int visH = (int)(col2.getHeight() * 0.40f);
+    // Visualizer (Dynamic Single / Dual Stereo Cavity)
+    int visH = (int)(col2.getHeight() * 0.36f);
     visualizer.setBounds(col2.removeFromTop(visH));
-    col2.removeFromTop(8);
+    col2.removeFromTop(6);
 
-    int cavityKnobH = (col2.getHeight() - 6) / 2;
+    int cavityKnobH = (col2.getHeight() - 8) / 3;
 
-    // Row 1: Cavity Geometry (Size, Shape, Depth)
-    auto topCavityRow = col2.removeFromTop(cavityKnobH);
-    int subKnobW = topCavityRow.getWidth() / 3;
+    // Row 3: Cavity A & Depth (Size A, Shape A, Depth)
+    auto rowA = col2.removeFromTop(cavityKnobH);
+    int subKnobW = rowA.getWidth() / 3;
 
-    auto szArea = topCavityRow.removeFromLeft(subKnobW);
+    auto szArea = rowA.removeFromLeft(subKnobW);
     bodySizeLabel.setBounds(szArea.removeFromBottom(16));
     bodySizeSlider.setBounds(szArea);
 
-    auto shArea = topCavityRow.removeFromLeft(subKnobW);
+    auto shArea = rowA.removeFromLeft(subKnobW);
     bodyShapeLabel.setBounds(shArea.removeFromBottom(16));
     bodyShapeSlider.setBounds(shArea);
 
-    auto dpArea = topCavityRow;
+    auto dpArea = rowA;
     bodyDepthLabel.setBounds(dpArea.removeFromBottom(16));
     bodyDepthSlider.setBounds(dpArea);
 
-    col2.removeFromTop(6);
+    col2.removeFromTop(4);
 
-    // Row 2: Fluid Air & Close-Mic Radiation (Openness, Sheen, Proximity)
-    auto bottomAirRow = col2;
-    auto opArea = bottomAirRow.removeFromLeft(subKnobW);
+    // Row 4: Cavity B & Stereo Spread (Size B, Shape B, Spread)
+    auto rowB = col2.removeFromTop(cavityKnobH);
+
+    auto szBArea = rowB.removeFromLeft(subKnobW);
+    bodySizeBLabel.setBounds(szBArea.removeFromBottom(16));
+    bodySizeBSlider.setBounds(szBArea);
+
+    auto shBArea = rowB.removeFromLeft(subKnobW);
+    bodyShapeBLabel.setBounds(shBArea.removeFromBottom(16));
+    bodyShapeBSlider.setBounds(shBArea);
+
+    auto spArea = rowB;
+    bodySpreadLabel.setBounds(spArea.removeFromBottom(16));
+    bodySpreadSlider.setBounds(spArea);
+
+    col2.removeFromTop(4);
+
+    // Row 5: Fluid Air & Close-Mic Radiation (Openness, Sheen, Proximity)
+    auto rowAir = col2;
+
+    auto opArea = rowAir.removeFromLeft(subKnobW);
     micOpennessLabel.setBounds(opArea.removeFromBottom(16));
     micOpennessSlider.setBounds(opArea);
 
-    auto snArea = bottomAirRow.removeFromLeft(subKnobW);
+    auto snArea = rowAir.removeFromLeft(subKnobW);
     micAirSheenLabel.setBounds(snArea.removeFromBottom(16));
     micAirSheenSlider.setBounds(snArea);
 
-    auto pxArea = bottomAirRow;
+    auto pxArea = rowAir;
     micProximityLabel.setBounds(pxArea.removeFromBottom(16));
     micProximitySlider.setBounds(pxArea);
 

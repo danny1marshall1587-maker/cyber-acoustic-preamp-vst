@@ -173,6 +173,28 @@ private:
     juce::Label bodyDepthLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bodyDepthAttachment;
 
+    // Controls: Dual Body Stereo Split & Widening Trick
+    juce::ToggleButton dualModeButton;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> dualModeAttachment;
+
+    juce::ToggleButton phaseInvertButton;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> phaseInvertAttachment;
+
+    juce::ComboBox bodyTypeBBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> bodyTypeBAttachment;
+
+    juce::Slider bodySizeBSlider;
+    juce::Label bodySizeBLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bodySizeBAttachment;
+
+    juce::Slider bodyShapeBSlider;
+    juce::Label bodyShapeBLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bodyShapeBAttachment;
+
+    juce::Slider bodySpreadSlider;
+    juce::Label bodySpreadLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bodySpreadAttachment;
+
     // Controls: Fluid Air & Close-Mic Radiation (Simulates Close Mic vs Pickup Openness)
     juce::Slider micOpennessSlider;
     juce::Label micOpennessLabel;

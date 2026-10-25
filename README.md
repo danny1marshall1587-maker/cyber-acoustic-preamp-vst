@@ -1,6 +1,26 @@
-# Cyber Acoustic Preamp v1.6.0
+# Cyber Acoustic Preamp v1.7.0
 ### Ultimate Fluid Space Acoustic Guitar Pickup Preamp & Cavity Physics
 **Free & Open Source Standalone App, VST3, AU, and LV2 Plugin for Windows, macOS, and Linux.**
+
+---
+
+## What's New in v1.7.0
+- **Dual Body Shape Stereo Split (Two Simultaneous Acoustic Bodies from One Guitar)**:
+  - Run two physically distinct 2-DOF acoustic cavity models concurrently from a single mono acoustic guitar input!
+  - **Channel A (Left)**: Configured with dedicated Body Type (0..8), Body Size ($0.5\times \dots 2.0\times$), and Body Shape ($\sigma = 0.0 \dots 1.0$).
+  - **Channel B (Right)**: Configured with independent Body Type B (0..8), Body Size B ($0.5\times \dots 2.0\times$), and Body Shape B ($\sigma = 0.0 \dots 1.0$).
+  - **Single / Mono Mode Retained**: Toggle `"DUAL STEREO"` on or off at any time. When off, the plugin runs classic single-body mono emulation with 100% backward compatibility.
+- **Constant-Power Stereo Spread Control (`bodySpread`)**:
+  - Smoothly positions and blends the two body emulations across the stereo soundfield ($0\% = \text{mono center blend}, 100\% = \text{hard discrete L/R split}$).
+  - Strictly adheres to constant-power trigonometry ($g_1 = \sin(\pi/4 + \theta), g_2 = \sin(\pi/4 - \theta)$ where $\theta = \text{spread} \cdot \pi/4$), preserving 100% total acoustic RMS energy across the entire spread range ($g_1^2 + g_2^2 \equiv 1.0$).
+- **Channel B Polarity Inversion ("Φ INV R" Acoustic Widening Trick)**:
+  - Inverts the polarity of the Right body cavity signal ($s_R \times= -1.0$) using click-free, ramped one-pole smoothing (~15ms transition).
+  - Leveraging the complementary acoustic modal frequencies of two distinct wood bodies (e.g., Dreadnought on Left and 000/OM on Right), inverting one channel creates the classic acoustic stereo widening trick ($L - R$) for an enormous, immersive 3D soundstage on headphones and stereo PA systems.
+- **Twin Guitar Body Silhouette Visualizer**:
+  - Automatically switches rendering modes: displays a single centered body in mono mode, and twin side-by-side acoustic guitars in dual mode (golden spruce Left body, deep rosewood Right body, active `[Φ 180° INV]` badge, and central `SPREAD: XX%` readout).
+- **Two New Factory Dual Presets**:
+  - **Preset 11: Dual Stereo - Dread & OM Split**: Deep resonant dreadnought warmth on Left, bright articulate OM fingerstyle clarity on Right with phase widening.
+  - **Preset 12: Dual Stereo - Jumbo & Mandolin Split**: Huge 28-liter J-200 bass resonance on Left, high percussive F-5 mandolin chop on Right for an expansive acoustic ensemble sound from a single instrument.
 
 ---
 
@@ -76,6 +96,8 @@ Acoustic guitar pickups (especially under-saddle piezo transducers) suffer from 
 8. **Takamine Piezo Rescue**: Maximum soundhole/top-plate phase relief ($90\%$ Openness, $75\%$ Sheen) to completely eradicate plastic $300\text{ Hz}$ pickup boxiness.
 9. **Martin D-45 Deep Air**: Full dreadnought chest weight ($80\%$ Proximity) with sparkling condenser breath ($85\%$ Sheen, $88\%$ Openness) in a Concert Hall.
 10. **Bluegrass F-5 Mandolin Chop**: Fast percussive woody bark ($A_0 = 285\text{ Hz}$, $T_1 = 350\text{ Hz}$), high proximity, restrained highs to tame double-course pick strike harshness.
+11. **Dual Stereo - Dread & OM Split**: Left: D-28 Dreadnought ($98\text{ Hz}$), Right: 000/OM ($108\text{ Hz}$) with $180^\circ$ polarity flip and $100\%$ spread for an immense studio widening effect.
+12. **Dual Stereo - Jumbo & Mandolin Split**: Left: J-200 Jumbo ($88\text{ Hz}$), Right: F-5 Mandolin ($285\text{ Hz}$) with $95\%$ spread, delivering a rich multi-instrument acoustic soundstage from one pickup.
 
 ---
 

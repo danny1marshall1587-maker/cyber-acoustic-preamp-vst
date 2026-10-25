@@ -1226,6 +1226,58 @@ public:
         fluid_reverb.reset();
     }
 
+    // Process mono acoustic signal through anti-quack, cavity model, air mic, defizz, eq, and feedback killer
+    inline float processMonoBody(float in_sample,
+                                 float denoise_amount,  float denoise_thresh_db,
+                                 bool  harmonic_shield, bool  listen_noise,
+                                 float quack_reduction, float body_depth,
+                                 float mic_openness,    float mic_air_sheen,   float mic_proximity,
+                                 float defizz_amount,   float air_shimmer,
+                                 float eq_low_gain,     float eq_low_mid_freq, float eq_low_mid_gain,
+                                 float eq_high_mid_freq,float eq_high_mid_gain,float eq_high_gain,
+                                 int   body_type_preset,
+                                 float custom_size,     float custom_shape) {
+        // Stage 0: 10-Band Cyber-Denoiser PRO (Spectral Phase Subtraction)
+        float s0 = denoiser.process(in_sample, denoise_amount, denoise_thresh_db,
+                                    harmonic_shield, listen_noise);
+        if (listen_noise) {
+            return s0;
+        }
+
+        // Stage 1: Anti-Quack Mechanical Inertia
+        float s1 = inertial_cell.process(s0, quack_reduction, 1.0f);
+
+        // Stage 2: 2-DOF Coupled Fluid Space Cavity
+        cavity_engine.setBodyGeometry(body_type_preset, custom_size, custom_shape);
+        float s2_body = cavity_engine.process(s1, body_depth);
+
+        // Stage 2B: Fluid Air & Close-Mic Radiation Engine
+        float s2 = air_mic_stage.processSample(s1, s2_body, mic_openness, mic_air_sheen, mic_proximity);
+
+        // Stage 3: Zero-Fizz Subtractive High-Band Conditioning
+        float s3 = defizz_engine.process(s2, defizz_amount, air_shimmer);
+
+        // Stage 3B: Studio 4-Band Acoustic Parametric EQ
+        eq_engine.update(eq_low_gain, eq_low_mid_freq, eq_low_mid_gain,
+                         eq_high_mid_freq, eq_high_mid_gain, eq_high_gain);
+        float s4 = eq_engine.process(s3);
+
+        // Stage 4: Auto-Tracking Feedback Nulls
+        float s5 = feedback_killer.process(s4);
+
+        return s5;
+    }
+
+    // Process stereo reverb stage on an incoming stereo soundfield
+    inline void processStereoReverb(float inL, float inR,
+                                    float reverb_size, float reverb_shape,
+                                    float reverb_tone, float reverb_decay,
+                                    float reverb_mix,  int   reverb_type,
+                                    float& outL, float& outR) {
+        fluid_reverb.process(inL, inR, reverb_size, reverb_shape, 80.0f, reverb_tone,
+                             reverb_decay, reverb_mix, reverb_type, sample_rate, outL, outR);
+    }
+
     // Process mono or stereo pickup input to stereo studio soundfield with denoiser, eq, and reverb
     inline void process(float in_sample, float& out_left, float& out_right,
                         float denoise_amount,  float denoise_thresh_db,
