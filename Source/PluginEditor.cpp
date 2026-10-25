@@ -85,7 +85,24 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
     bodyDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.apvts, "bodyDepth", bodyDepthSlider);
 
-    // 4. Feedback Defense & Stage Master
+    // 4. Fluid Reverb Space (From Euphoria Amp)
+    setupRotary(reverbMixSlider, reverbMixLabel, "REVERB MIX", "%");
+    reverbMixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "reverbMix", reverbMixSlider);
+
+    setupRotary(reverbDecaySlider, reverbDecayLabel, "REVERB DECAY", "%");
+    reverbDecayAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "reverbDecay", reverbDecaySlider);
+
+    setupRotary(reverbSizeSlider, reverbSizeLabel, "ROOM SIZE", "x");
+    reverbSizeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "reverbSize", reverbSizeSlider);
+
+    setupRotary(reverbToneSlider, reverbToneLabel, "REVERB TONE", " Hz");
+    reverbToneAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "reverbTone", reverbToneSlider);
+
+    // 5. Feedback Defense & Stage Master
     addAndMakeVisible(afd1Toggle);
     afd1Toggle.setButtonText("AIR NOTCH (A0)");
     afd1Attachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
@@ -112,9 +129,9 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
     outputGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.apvts, "outputGain", outputGainSlider);
 
-    setSize(920, 580);
+    setSize(960, 600);
     setResizable(true, true);
-    setResizeLimits(780, 500, 1400, 900);
+    setResizeLimits(800, 520, 1500, 950);
 
     startTimerHz(30);
 }
@@ -147,36 +164,43 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("bodyType", 0); setVal("bodySize", 1.0f); setVal("bodyShape", 0.82f);
             setVal("quackReduction", 65.0f); setVal("bodyDepth", 70.0f); setVal("deFizz", 60.0f);
             setVal("airShimmer", 35.0f); setVal("stereoWidth", 110.0f);
+            setVal("reverbMix", 18.0f); setVal("reverbDecay", 35.0f); setVal("reverbSize", 1.0f); setVal("reverbTone", 6000.0f);
             break;
         case 2: // Modern Fingerstyle OM
             setVal("bodyType", 2); setVal("bodySize", 0.95f); setVal("bodyShape", 0.42f);
             setVal("quackReduction", 55.0f); setVal("bodyDepth", 60.0f); setVal("deFizz", 50.0f);
             setVal("airShimmer", 45.0f); setVal("stereoWidth", 130.0f);
+            setVal("reverbMix", 26.0f); setVal("reverbDecay", 55.0f); setVal("reverbSize", 1.25f); setVal("reverbTone", 7500.0f);
             break;
         case 3: // Cavernous J-200 Strumming
             setVal("bodyType", 1); setVal("bodySize", 1.25f); setVal("bodyShape", 0.65f);
             setVal("quackReduction", 75.0f); setVal("bodyDepth", 85.0f); setVal("deFizz", 65.0f);
             setVal("airShimmer", 40.0f); setVal("stereoWidth", 140.0f);
+            setVal("reverbMix", 32.0f); setVal("reverbDecay", 70.0f); setVal("reverbSize", 1.8f); setVal("reverbTone", 5000.0f);
             break;
         case 4: // Delta Blues Parlor
             setVal("bodyType", 4); setVal("bodySize", 0.80f); setVal("bodyShape", 0.25f);
             setVal("quackReduction", 45.0f); setVal("bodyDepth", 50.0f); setVal("deFizz", 40.0f);
             setVal("airShimmer", 20.0f); setVal("stereoWidth", 75.0f);
+            setVal("reverbMix", 12.0f); setVal("reverbDecay", 22.0f); setVal("reverbSize", 0.7f); setVal("reverbTone", 4500.0f);
             break;
         case 5: // Concert Classical Nylon
             setVal("bodyType", 5); setVal("bodySize", 0.92f); setVal("bodyShape", 0.35f);
             setVal("quackReduction", 40.0f); setVal("bodyDepth", 65.0f); setVal("deFizz", 45.0f);
             setVal("airShimmer", 25.0f); setVal("stereoWidth", 100.0f);
+            setVal("reverbMix", 28.0f); setVal("reverbDecay", 60.0f); setVal("reverbSize", 1.4f); setVal("reverbTone", 6500.0f);
             break;
         case 6: // Acoustic Jazz Archtop
             setVal("bodyType", 6); setVal("bodySize", 1.05f); setVal("bodyShape", 0.18f);
             setVal("quackReduction", 50.0f); setVal("bodyDepth", 45.0f); setVal("deFizz", 55.0f);
             setVal("airShimmer", 30.0f); setVal("stereoWidth", 80.0f);
+            setVal("reverbMix", 16.0f); setVal("reverbDecay", 30.0f); setVal("reverbSize", 0.9f); setVal("reverbTone", 5500.0f);
             break;
         case 7: // Gypsy Django Selmer
             setVal("bodyType", 7); setVal("bodySize", 1.0f); setVal("bodyShape", 0.12f);
             setVal("quackReduction", 60.0f); setVal("bodyDepth", 55.0f); setVal("deFizz", 60.0f);
             setVal("airShimmer", 50.0f); setVal("stereoWidth", 90.0f);
+            setVal("reverbMix", 20.0f); setVal("reverbDecay", 38.0f); setVal("reverbSize", 1.0f); setVal("reverbTone", 7000.0f);
             break;
     }
 }
@@ -218,7 +242,7 @@ void CyberAcousticEditor::paint(juce::Graphics& g)
     g.setFont(juce::FontOptions(12.5f));
     g.drawText("TRANSDUCER CONDITIONING", (int)mainArea.getX(), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
     g.drawText("FLUID ACOUSTIC CAVITY", (int)(mainArea.getX() + colW), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
-    g.drawText("FEEDBACK & STAGE MASTER", (int)(mainArea.getX() + colW * 2.0f), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
+    g.drawText("FLUID REVERB & STAGE MASTER", (int)(mainArea.getX() + colW * 2.0f), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
 }
 
 void CyberAcousticEditor::resized()
@@ -279,34 +303,59 @@ void CyberAcousticEditor::resized()
     bodyDepthLabel.setBounds(dpArea.removeFromBottom(20));
     bodyDepthSlider.setBounds(dpArea);
 
-    // --- Column 3: Feedback & Stage Master ---
+    // --- Column 3: Fluid Reverb Space & Stage Master ---
     auto col3 = mainArea.reduced(10);
     col3.removeFromTop(28);
 
-    // Top half: Dual AFD Notches
-    auto afdRow1 = col3.removeFromTop(75);
-    afd1Toggle.setBounds(afdRow1.removeFromLeft(130).reduced(4));
-    afdFreq1Label.setBounds(afdRow1.removeFromBottom(18));
+    // Part A: Fluid Reverb Space (2x2 Grid)
+    auto revArea = col3.removeFromTop(150);
+    int revRowH = revArea.getHeight() / 2;
+    auto revRow1 = revArea.removeFromTop(revRowH);
+    auto revRow2 = revArea;
+
+    int revHalfW = revRow1.getWidth() / 2;
+    auto r1L = revRow1.removeFromLeft(revHalfW);
+    reverbMixLabel.setBounds(r1L.removeFromBottom(16));
+    reverbMixSlider.setBounds(r1L);
+
+    auto r1R = revRow1;
+    reverbDecayLabel.setBounds(r1R.removeFromBottom(16));
+    reverbDecaySlider.setBounds(r1R);
+
+    auto r2L = revRow2.removeFromLeft(revHalfW);
+    reverbSizeLabel.setBounds(r2L.removeFromBottom(16));
+    reverbSizeSlider.setBounds(r2L);
+
+    auto r2R = revRow2;
+    reverbToneLabel.setBounds(r2R.removeFromBottom(16));
+    reverbToneSlider.setBounds(r2R);
+
+    col3.removeFromTop(10);
+
+    // Part B: Dual AFD Surgical Notches
+    auto afdRow1 = col3.removeFromTop(60);
+    afd1Toggle.setBounds(afdRow1.removeFromLeft(125).reduced(2));
+    afdFreq1Label.setBounds(afdRow1.removeFromBottom(16));
     afdFreq1Slider.setBounds(afdRow1);
 
-    col3.removeFromTop(6);
+    col3.removeFromTop(4);
 
-    auto afdRow2 = col3.removeFromTop(75);
-    afd2Toggle.setBounds(afdRow2.removeFromLeft(130).reduced(4));
-    afdFreq2Label.setBounds(afdRow2.removeFromBottom(18));
+    auto afdRow2 = col3.removeFromTop(60);
+    afd2Toggle.setBounds(afdRow2.removeFromLeft(125).reduced(2));
+    afdFreq2Label.setBounds(afdRow2.removeFromBottom(16));
     afdFreq2Slider.setBounds(afdRow2);
 
-    col3.removeFromTop(16);
+    col3.removeFromTop(10);
 
-    // Bottom half: Stereo Width & Output Gain
+    // Part C: Stereo Width & Output Gain
     auto masterRow = col3;
     int mKnobW = masterRow.getWidth() / 2;
 
     auto swArea = masterRow.removeFromLeft(mKnobW);
-    stereoWidthLabel.setBounds(swArea.removeFromBottom(20));
-    stereoWidthSlider.setBounds(swArea.reduced(10));
+    stereoWidthLabel.setBounds(swArea.removeFromBottom(18));
+    stereoWidthSlider.setBounds(swArea.reduced(6));
 
     auto outArea = masterRow;
-    outputGainLabel.setBounds(outArea.removeFromBottom(20));
-    outputGainSlider.setBounds(outArea.reduced(10));
+    outputGainLabel.setBounds(outArea.removeFromBottom(18));
+    outputGainSlider.setBounds(outArea.reduced(6));
 }
