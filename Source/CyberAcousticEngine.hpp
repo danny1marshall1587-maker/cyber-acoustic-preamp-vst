@@ -371,6 +371,196 @@ public:
 };
 
 // ============================================================================
+// Stage 5: Fluid Biquad & Pure Fluid Dynamics Reverb Space (From Euphoria Amp)
+// ============================================================================
+struct FluidBiquad {
+    float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
+    float a1 = 0.0f, a2 = 0.0f;
+    float s1 = 0.0f, s2 = 0.0f;
+
+    inline float process(float in) {
+        float out = b0 * in + s1;
+        s1 = b1 * in - a1 * out + s2;
+        s2 = b2 * in - a2 * out;
+        return out;
+    }
+
+    void reset() { s1 = s2 = 0.0f; }
+
+    void setLowPass(float fc, float Q, float sr) {
+        fc = std::max(20.0f, std::min(sr * 0.45f, fc));
+        float omega = 2.0f * (float)M_PI * fc / sr;
+        float sn = std::sin(omega);
+        float cs = std::cos(omega);
+        float alpha = sn / (2.0f * Q);
+        float a0 = 1.0f + alpha;
+        b0 = ((1.0f - cs) * 0.5f) / a0;
+        b1 = (1.0f - cs) / a0;
+        b2 = ((1.0f - cs) * 0.5f) / a0;
+        a1 = (-2.0f * cs) / a0;
+        a2 = (1.0f - alpha) / a0;
+    }
+
+    void setHighPass(float fc, float Q, float sr) {
+        fc = std::max(20.0f, std::min(sr * 0.45f, fc));
+        float omega = 2.0f * (float)M_PI * fc / sr;
+        float sn = std::sin(omega);
+        float cs = std::cos(omega);
+        float alpha = sn / (2.0f * Q);
+        float a0 = 1.0f + alpha;
+        b0 = ((1.0f + cs) * 0.5f) / a0;
+        b1 = (-(1.0f + cs)) / a0;
+        b2 = ((1.0f + cs) * 0.5f) / a0;
+        a1 = (-2.0f * cs) / a0;
+        a2 = (1.0f - alpha) / a0;
+    }
+};
+
+struct FluidReverbSpace {
+    static constexpr int FDN_LINES = 4;
+    static constexpr int BUF_SIZE = 16384;
+
+    float delayBuffers[FDN_LINES][BUF_SIZE] = {};
+    int writeIndices[FDN_LINES] = {};
+
+    FluidBiquad sendHp;
+    FluidBiquad sendLp;
+    float lastLowCut = -1.0f;
+    float lastHighCut = -1.0f;
+
+    float apBuf1[211] = {};
+    float apBuf2[379] = {};
+    int apIdx1 = 0;
+    int apIdx2 = 0;
+
+    float dampingLp[FDN_LINES] = {};
+
+    void reset() {
+        for (int i = 0; i < FDN_LINES; ++i) {
+            std::fill(delayBuffers[i], delayBuffers[i] + BUF_SIZE, 0.0f);
+            writeIndices[i] = 0;
+            dampingLp[i] = 0.0f;
+        }
+        std::fill(apBuf1, apBuf1 + 211, 0.0f);
+        std::fill(apBuf2, apBuf2 + 379, 0.0f);
+        apIdx1 = apIdx2 = 0;
+        sendHp.reset();
+        sendLp.reset();
+        lastLowCut = -1.0f;
+        lastHighCut = -1.0f;
+    }
+
+    inline void process(
+        float inL, float inR,
+        float curSize, float curShape,
+        float sendLowCutHz, float sendHighCutHz,
+        float dwellNorm, float mixNorm,
+        float sampleRate,
+        float& outL, float& outR
+    ) {
+        if (mixNorm <= 0.001f) {
+            outL = inL;
+            outR = inR;
+            return;
+        }
+
+        // 1. Abbey Road Pre-Tank Send Conditioning Filter
+        if (std::fabs(sendLowCutHz - lastLowCut) > 0.25f) {
+            lastLowCut = sendLowCutHz;
+            sendHp.setHighPass(std::clamp(sendLowCutHz, 20.0f, 1000.0f), 0.7071f, sampleRate);
+        }
+        if (std::fabs(sendHighCutHz - lastHighCut) > 1.0f) {
+            lastHighCut = sendHighCutHz;
+            sendLp.setLowPass(std::clamp(sendHighCutHz, 1500.0f, 18000.0f), 0.7071f, sampleRate);
+        }
+
+        float inMono = (inL + inR) * 0.5f;
+        float conditioned = sendLp.process(sendHp.process(inMono));
+
+        // 2. 12AT7 Tube Pre-Driver Stage (high-headroom glass driver)
+        float driveGain = 0.38f + dwellNorm * 0.42f;
+        float driven = std::tanh(conditioned * driveGain);
+
+        // 3. Dual Allpass Diffuser Stage
+        float b1 = apBuf1[apIdx1];
+        float v1 = driven - 0.55f * b1;
+        float diff1 = b1 + 0.55f * v1;
+        apBuf1[apIdx1] = v1;
+        if (++apIdx1 >= 211) apIdx1 = 0;
+
+        float b2 = apBuf2[apIdx2];
+        float v2 = diff1 - 0.50f * b2;
+        float diff2 = b2 + 0.50f * v2;
+        apBuf2[apIdx2] = v2;
+        if (++apIdx2 >= 379) apIdx2 = 0;
+
+        // 4. Multi-Chamber Waveguide Delay Reads (432 Hz Natural Acoustic Period)
+        float t432 = sampleRate / 432.0f; // ~111.1 samples at 48kHz
+        static const float s_primeRatios[FDN_LINES] = { 1.000f, 1.4142f, 1.8371f, 2.3607f };
+
+        float readOutputs[FDN_LINES];
+        for (int k = 0; k < FDN_LINES; ++k) {
+            float targetDelay = std::clamp(t432 * s_primeRatios[k] * curSize * 2.85f, 8.0f, (float)(BUF_SIZE - 16));
+
+            // Hermite 4-point cubic fractional delay read (zero pitch clicks)
+            float rPos = (float)writeIndices[k] - targetDelay;
+            while (rPos < 0.0f) rPos += (float)BUF_SIZE;
+            int iPos = (int)rPos;
+            float frac = rPos - (float)iPos;
+
+            int i0 = (iPos - 1 + BUF_SIZE) % BUF_SIZE;
+            int i1 = iPos % BUF_SIZE;
+            int i2 = (iPos + 1) % BUF_SIZE;
+            int i3 = (iPos + 2) % BUF_SIZE;
+
+            float y0 = delayBuffers[k][i0], y1 = delayBuffers[k][i1];
+            float y2 = delayBuffers[k][i2], y3 = delayBuffers[k][i3];
+            float c0 = y1;
+            float c1 = 0.5f * (y2 - y0);
+            float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+            float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+            readOutputs[k] = ((c3 * frac + c2) * frac + c1) * frac + c0;
+        }
+
+        // 5. 4x4 Lossless Orthogonal Hadamard Feedback Matrix
+        float s0 = 0.5f * ( readOutputs[0] + readOutputs[1] + readOutputs[2] + readOutputs[3]);
+        float s1 = 0.5f * ( readOutputs[0] - readOutputs[1] + readOutputs[2] - readOutputs[3]);
+        float s2 = 0.5f * ( readOutputs[0] + readOutputs[1] - readOutputs[2] - readOutputs[3]);
+        float s3 = 0.5f * ( readOutputs[0] - readOutputs[1] - readOutputs[2] + readOutputs[3]);
+        float mixed[FDN_LINES] = { s0, s1, s2, s3 };
+
+        // 6. Fluid Boundary Dispersion & Corner Eddy Turbulence (Shape Modulation)
+        float feedbackFactor = 0.50f + 0.44f * dwellNorm;
+        float dampAlpha = 0.20f + 0.35f * (1.0f - curShape * 0.45f);
+
+        for (int k = 0; k < FDN_LINES; ++k) {
+            dampingLp[k] += dampAlpha * (mixed[k] - dampingLp[k]);
+            float damped = dampingLp[k];
+
+            // Corner eddy turbulence: x^2(1 - x) bounded non-linearity
+            float xNorm = std::tanh(damped);
+            float eddy = curShape * 0.12f * (xNorm * xNorm * (1.0f - xNorm));
+            float fbSignal = std::tanh(damped * feedbackFactor) - eddy;
+
+            delayBuffers[k][writeIndices[k]] = diff2 + fbSignal;
+            if (++writeIndices[k] >= BUF_SIZE) writeIndices[k] = 0;
+        }
+
+        // 7. Stereo Spatial Extraction
+        float wetL = 1.25f * (readOutputs[0] + readOutputs[2]);
+        float wetR = 1.25f * (readOutputs[1] + readOutputs[3]);
+
+        // 8. Equal-Power Dry/Wet Blend
+        float mixAngle = mixNorm * 1.5707963f; // 0 .. pi/2
+        float dryG = std::cos(mixAngle);
+        float wetG = std::sin(mixAngle);
+
+        outL = inL * dryG + wetL * wetG;
+        outR = inR * dryG + wetR * wetG;
+    }
+};
+
+// ============================================================================
 // Master Acoustic Preamp Engine
 // ============================================================================
 class CyberAcousticEngine {
@@ -379,12 +569,16 @@ public:
     FluidAcousticCavity    cavity_engine;
     SmartAcousticDeFizz    defizz_engine;
     AcousticFeedbackKiller feedback_killer;
+    FluidReverbSpace       fluid_reverb;
+    float sample_rate = 48000.0f;
 
-    void init(float sample_rate) {
-        inertial_cell.init(sample_rate);
-        cavity_engine.init(sample_rate);
-        defizz_engine.init(sample_rate);
-        feedback_killer.init(sample_rate);
+    void init(float sr) {
+        sample_rate = sr;
+        inertial_cell.init(sr);
+        cavity_engine.init(sr);
+        defizz_engine.init(sr);
+        feedback_killer.init(sr);
+        fluid_reverb.reset();
     }
 
     void reset() {
@@ -392,14 +586,17 @@ public:
         cavity_engine.reset();
         defizz_engine.reset();
         feedback_killer.reset();
+        fluid_reverb.reset();
     }
 
-    // Process mono or stereo pickup input to stereo studio soundfield
+    // Process mono or stereo pickup input to stereo studio soundfield with reverb
     inline void process(float in_sample, float& out_left, float& out_right,
                         float quack_reduction, float body_depth,
                         float defizz_amount,   float air_shimmer,
                         float stereo_width,    int body_type_preset,
                         float custom_size,     float custom_shape,
+                        float reverb_mix,      float reverb_decay,
+                        float reverb_size,     float reverb_tone,
                         float output_gain_linear) {
         // Stage 1: Anti-Quack Mechanical Inertia
         float s1 = inertial_cell.process(in_sample, quack_reduction, 1.0f);
@@ -418,8 +615,16 @@ public:
         float mid  = s4;
         float side = (s2 - s1) * 0.45f * stereo_width;
 
-        out_left  = flush_denormal((mid + side) * output_gain_linear);
-        out_right = flush_denormal((mid - side) * output_gain_linear);
+        float dryL = mid + side;
+        float dryR = mid - side;
+
+        // Stage 6: Pure Fluid Dynamics Reverb Space (From Euphoria Amp)
+        float revL = dryL, revR = dryR;
+        fluid_reverb.process(dryL, dryR, reverb_size, custom_shape, 80.0f, reverb_tone,
+                             reverb_decay, reverb_mix, sample_rate, revL, revR);
+
+        out_left  = flush_denormal(revL * output_gain_linear);
+        out_right = flush_denormal(revR * output_gain_linear);
     }
 };
 
