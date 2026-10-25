@@ -1,15 +1,22 @@
-# Cyber Acoustic Preamp
+# Cyber Acoustic Preamp v1.4.0
 ### Ultimate Fluid Space Acoustic Guitar Pickup Preamp & Cavity Physics
 **Free & Open Source Standalone App, VST3, AU, and LV2 Plugin for Windows, macOS, and Linux.**
 
 ---
 
 ## Overview
-Acoustic guitar pickups (especially under-saddle piezo transducers) suffer from two notorious physical flaws:
+Acoustic guitar pickups (especially under-saddle piezo transducers) suffer from three notorious physical flaws:
 1. **"Piezo Quack"**: Razor-sharp compressive force transients caused by the lack of physical bridge/soundboard mass inertia.
 2. **"Transducer Fizz"**: Harsh, undamped mechanical contact vibrations between $4.5\text{ kHz}$ and $14\text{ kHz}$ that bypass the natural internal damping of spruce and cedar wood fibers.
+3. **"Cardboard Boxiness"**: Trapped soundboard resonance from listening directly at the bridge saddle without exterior air propagation, phase-inverted soundhole cancellation, or boundary acoustic diffraction.
 
-**Cyber Acoustic Preamp** resolves these mechanical discrepancies using physical fluid dynamics and acoustic cavity physics:
+**Cyber Acoustic Preamp v1.4.0** resolves these mechanical discrepancies using physical fluid dynamics and exterior acoustic air radiation physics:
+- **Fluid Air & Close-Mic Radiation Engine (`FluidAirMicDSP`)**:
+  - **Tri-Point Wavefront Radiation Interference Matrix**: Models the acoustic interference between the Direct String Wave ($t_0$), Top-Plate Wood Wave ($\Delta t_1 \approx 0.28 - 0.63\text{ ms}$), and Soundhole Helmholtz Piston Wave ($\Delta t_2 \approx 0.85 - 1.60\text{ ms}$). Subtracts a portion of the delayed soundhole wave from the top plate wave ($-\gamma_{\text{hole}}$), physically cancelling the boxy $200 - 400\text{ Hz}$ "cardboard box" frequency region that plagues under-saddle pickups.
+  - **Free-Air Particle Acceleration Sheen (`micAirSheen`)**: Computes the discrete second derivative of surface velocity ($A_{\text{air}}[n] = v[n] - v[n-1]$) with air viscosity low-pass damping, creating silky, uncompressed $10\text{ kHz}+$ condenser microphone breath that completely bypasses heavy soundboard wood damping.
+  - **Close-Mic Pressure-Gradient Proximity Effect (`closeMicProximity`)**: Models the natural, chesty $90 - 130\text{ Hz}$ low-end warmth boost that occurs when a directional capsule is placed 3 to 6 inches from the 12th fret.
+  - **Dual-Stage All-Pass Boundary Acoustic Diffraction**: Simulates the acoustic wavefront wrapping around the curved bout of the guitar body in 3D air space ($g_1 = 0.38 \cdot \text{openness}, g_2 = -0.24 \cdot \text{openness}$) with soft capsule diaphragm compliance.
+  - **Constant-Time Padé Approximant (`FluidMath::fast_tanh`)**: Replaces standard `std::tanh` calls with a 3-cycle branchless rational approximant ($x(27 + x^2)/(27 + 9x^2)$), guaranteeing zero CPU spikes and zero latency degradation under any signal level.
 - **10-Band Cyber-Denoiser PRO (`AcousticCyberDenoiser`)**: Zero-latency 10-band complementary filter bank ($60\text{ Hz}, 150\text{ Hz}, 400\text{ Hz}, 800\text{ Hz}, 1.5\text{ kHz}, 3\text{ kHz}, 5\text{ kHz}, 8\text{ kHz}, 12\text{ kHz}$) with perfect reconstruction. Continuously subtracts preamp hiss, cable buzz, and electromagnetic interference in parallel with a non-zero floor ($0.08$) that allows delicate acoustic note decays to sustain naturally into $-\infty\text{ dBFS}$ with zero gating, stuttering, or squelch. Features an intelligent Harmonic Shield protecting acoustic guitar fundamentals ($150 - 800\text{ Hz}$) and Listen Noise audition mode.
 - **Mechanical Soundboard Inertia (`AcousticInertialCell`)**: Recreates the physical mass momentum ($F=ma$) and non-linear grain compliance sag of a vibrating spruce bridge, absorbing the quack into organic woody bloom.
 - **2-DOF Coupled Fluid Cavity Engine (`FluidAcousticCavity`)**: Uses coupled Christensen differential equations (air soundhole Helmholtz $A_0$ + soundboard breathing mode $T_1$) with boundary shape factor ($\sigma$) and corner eddy vortices to reconstruct the 3D acoustic bloom of **8 classic guitar shapes** (*Dreadnought, Jumbo, 000/OM, Grand Auditorium, Parlor, Classical Nylon, Acoustic Archtop, and Selmer Maccaferri*).
@@ -37,15 +44,16 @@ Acoustic guitar pickups (especially under-saddle piezo transducers) suffer from 
 
 ---
 
-## 8 Built-in Acoustic Body Presets
+## Built-in Studio Acoustic Presets
 1. **Dreadnought Studio Flatpicker (D-28)**: Deep booming bass, scooped low-mids, immense flatpicking projection.
-2. **Modern Fingerstyle (000 / OM)**: Laser-focused mid-range clarity and fast transient articulation.
-3. **Cavernous Strumming (J-200 Jumbo)**: Huge sub-harmonic punch ($88\text{ Hz}$), cavernous headroom.
-4. **Delta Blues Boxy Parlor (Single-0)**: Mid-forward boxy bark, intimate percussive decay.
-5. **Concert Classical Warm Nylon**: Spanish fan-bracing compliance and rich second-harmonic warmth.
+2. **Modern Fingerstyle (000 / OM)**: Laser-focused mid-range clarity, tightened proximity, and fast transient articulation.
+3. **Cavernous Strumming (J-200 Jumbo)**: Huge sub-harmonic punch ($88\text{ Hz}$), wide cavernous headroom.
+4. **Delta Blues Boxy Parlor (Single-0)**: Mid-forward boxy bark, close-mic percussive thumb snap.
+5. **Concert Classical Warm Nylon**: Spanish fan-bracing compliance, gentle sheen, and rich second-harmonic warmth.
 6. **Acoustic Jazz Archtop**: High air velocity through carved f-holes, fast acoustic comping "chop".
 7. **Gypsy Django Selmer**: Piercing oval-soundhole bite and stinging lead acoustic cut.
-8. **Custom Physical Morphing**: Continuous Body Size ($0.5\times \dots 2.0\times$) and Shape ($\sigma$).
+8. **Takamine Piezo Rescue**: Maximum soundhole/top-plate phase relief ($90\%$ Openness, $75\%$ Sheen) to completely eradicate plastic $300\text{ Hz}$ pickup boxiness.
+9. **Martin D-45 Deep Air**: Full dreadnought chest weight ($80\%$ Proximity) with sparkling condenser breath ($85\%$ Sheen, $88\%$ Openness).
 
 ---
 

@@ -54,6 +54,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout CyberAcousticProcessor::crea
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("bodyDepth", 1), "Fluid Cavity Depth", 0.0f, 100.0f, 65.0f));
 
+    // Fluid Air & Close-Mic Radiation Engine (Simulates Close Mic vs Pickup Openness)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("micOpenness", 1), "Mic Openness", 0.0f, 100.0f, 75.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("micAirSheen", 1), "Mic Air Sheen", 0.0f, 100.0f, 65.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("micProximity", 1), "Close Mic Proximity", 0.0f, 100.0f, 70.0f));
+
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("deFizz", 1), "Smart De-Fizz", 0.0f, 100.0f, 55.0f));
 
@@ -175,6 +185,9 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     float bodyShape = apvts.getRawParameterValue("bodyShape")->load();
     float quack = apvts.getRawParameterValue("quackReduction")->load() / 100.0f;
     float depth = apvts.getRawParameterValue("bodyDepth")->load() / 100.0f;
+    float micOpenness = apvts.getRawParameterValue("micOpenness")->load() / 100.0f;
+    float micAirSheen = apvts.getRawParameterValue("micAirSheen")->load() / 100.0f;
+    float micProximity = apvts.getRawParameterValue("micProximity")->load() / 100.0f;
     float defizz = apvts.getRawParameterValue("deFizz")->load() / 100.0f;
     float shimmer = apvts.getRawParameterValue("airShimmer")->load() / 100.0f;
     float width = apvts.getRawParameterValue("stereoWidth")->load() / 100.0f;
@@ -232,13 +245,13 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             float l = 0.0f, r = 0.0f;
             dspEngineLeft.process(sL, l, dummy1,
                                   denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
-                                  quack, depth, defizz, shimmer,
+                                  quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
                                   eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
                                   width, bodyType, bodySize, bodyShape,
                                   revMix, revDecay, revSize, revTone, gainLin);
             dspEngineRight.process(sR, dummy2, r,
                                    denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
-                                   quack, depth, defizz, shimmer,
+                                   quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
                                    eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
                                    width, bodyType, bodySize, bodyShape,
                                    revMix, revDecay, revSize, revTone, gainLin);
@@ -288,7 +301,7 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             float l = 0.0f, r = 0.0f;
             dspEngineLeft.process(guitarMono, l, r,
                                   denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
-                                  quack, depth, defizz, shimmer,
+                                  quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
                                   eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
                                   width, bodyType, bodySize, bodyShape,
                                   revMix, revDecay, revSize, revTone, gainLin);

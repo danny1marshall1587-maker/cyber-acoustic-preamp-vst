@@ -14,6 +14,8 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
     presetSelector.addItem("Preset: Concert Classical Warm Nylon", 5);
     presetSelector.addItem("Preset: Acoustic Jazz Archtop Comp", 6);
     presetSelector.addItem("Preset: Gypsy Django Selmer Lead", 7);
+    presetSelector.addItem("Preset: Takamine Piezo Rescue", 8);
+    presetSelector.addItem("Preset: Martin D-45 Deep Air", 9);
     presetSelector.setSelectedId(1, juce::dontSendNotification);
     presetSelector.onChange = [this]() {
         loadPreset(presetSelector.getSelectedId());
@@ -110,7 +112,20 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
     bodyDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.apvts, "bodyDepth", bodyDepthSlider);
 
-    // 3B. Studio 4-Band Acoustic Parametric EQ (Active 3D Tone Matrix)
+    // 3B. Fluid Air & Close-Mic Radiation (Simulates Close Mic vs Pickup Openness)
+    setupRotary(micOpennessSlider, micOpennessLabel, "MIC OPENNESS", "%");
+    micOpennessAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "micOpenness", micOpennessSlider);
+
+    setupRotary(micAirSheenSlider, micAirSheenLabel, "AIR SHEEN", "%");
+    micAirSheenAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "micAirSheen", micAirSheenSlider);
+
+    setupRotary(micProximitySlider, micProximityLabel, "PROXIMITY", "%");
+    micProximityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "micProximity", micProximitySlider);
+
+    // 3C. Studio 4-Band Acoustic Parametric EQ (Active 3D Tone Matrix)
     setupRotary(eqLowGainSlider, eqLowGainLabel, "BODY (110Hz)", " dB");
     eqLowGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.apvts, "eqLowGain", eqLowGainSlider);
@@ -213,6 +228,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("denoiseAmount", 50.0f); setVal("denoiseThreshold", -80.0f);
             setVal("quackReduction", 65.0f); setVal("bodyDepth", 70.0f); setVal("deFizz", 60.0f);
             setVal("airShimmer", 35.0f);
+            setVal("micOpenness", 85.0f); setVal("micAirSheen", 80.0f); setVal("micProximity", 80.0f);
             setVal("eqLowGain", 1.0f); setVal("eqLowMidFreq", 450.0f); setVal("eqLowMidGain", -2.5f);
             setVal("eqHighMidFreq", 3200.0f); setVal("eqHighMidGain", 1.5f); setVal("eqHighGain", 2.0f);
             setVal("stereoWidth", 110.0f);
@@ -223,6 +239,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("denoiseAmount", 55.0f); setVal("denoiseThreshold", -82.0f);
             setVal("quackReduction", 55.0f); setVal("bodyDepth", 60.0f); setVal("deFizz", 50.0f);
             setVal("airShimmer", 45.0f);
+            setVal("micOpenness", 75.0f); setVal("micAirSheen", 60.0f); setVal("micProximity", 50.0f);
             setVal("eqLowGain", 0.5f); setVal("eqLowMidFreq", 500.0f); setVal("eqLowMidGain", -3.0f);
             setVal("eqHighMidFreq", 3800.0f); setVal("eqHighMidGain", 2.5f); setVal("eqHighGain", 3.5f);
             setVal("stereoWidth", 130.0f);
@@ -233,6 +250,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("denoiseAmount", 60.0f); setVal("denoiseThreshold", -78.0f);
             setVal("quackReduction", 75.0f); setVal("bodyDepth", 85.0f); setVal("deFizz", 65.0f);
             setVal("airShimmer", 40.0f);
+            setVal("micOpenness", 80.0f); setVal("micAirSheen", 70.0f); setVal("micProximity", 75.0f);
             setVal("eqLowGain", 2.5f); setVal("eqLowMidFreq", 380.0f); setVal("eqLowMidGain", -2.0f);
             setVal("eqHighMidFreq", 2800.0f); setVal("eqHighMidGain", 1.0f); setVal("eqHighGain", 2.0f);
             setVal("stereoWidth", 140.0f);
@@ -243,6 +261,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("denoiseAmount", 40.0f); setVal("denoiseThreshold", -75.0f);
             setVal("quackReduction", 45.0f); setVal("bodyDepth", 50.0f); setVal("deFizz", 40.0f);
             setVal("airShimmer", 20.0f);
+            setVal("micOpenness", 60.0f); setVal("micAirSheen", 40.0f); setVal("micProximity", 85.0f);
             setVal("eqLowGain", -2.0f); setVal("eqLowMidFreq", 650.0f); setVal("eqLowMidGain", 1.5f);
             setVal("eqHighMidFreq", 2400.0f); setVal("eqHighMidGain", 2.0f); setVal("eqHighGain", -1.0f);
             setVal("stereoWidth", 75.0f);
@@ -253,6 +272,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("denoiseAmount", 45.0f); setVal("denoiseThreshold", -84.0f);
             setVal("quackReduction", 40.0f); setVal("bodyDepth", 65.0f); setVal("deFizz", 45.0f);
             setVal("airShimmer", 25.0f);
+            setVal("micOpenness", 85.0f); setVal("micAirSheen", 50.0f); setVal("micProximity", 60.0f);
             setVal("eqLowGain", 1.5f); setVal("eqLowMidFreq", 400.0f); setVal("eqLowMidGain", -1.5f);
             setVal("eqHighMidFreq", 2600.0f); setVal("eqHighMidGain", 0.5f); setVal("eqHighGain", 1.0f);
             setVal("stereoWidth", 100.0f);
@@ -263,6 +283,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("denoiseAmount", 50.0f); setVal("denoiseThreshold", -80.0f);
             setVal("quackReduction", 50.0f); setVal("bodyDepth", 45.0f); setVal("deFizz", 55.0f);
             setVal("airShimmer", 30.0f);
+            setVal("micOpenness", 55.0f); setVal("micAirSheen", 35.0f); setVal("micProximity", 65.0f);
             setVal("eqLowGain", 1.0f); setVal("eqLowMidFreq", 550.0f); setVal("eqLowMidGain", 1.0f);
             setVal("eqHighMidFreq", 2200.0f); setVal("eqHighMidGain", -1.0f); setVal("eqHighGain", -2.5f);
             setVal("stereoWidth", 80.0f);
@@ -273,10 +294,33 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("denoiseAmount", 55.0f); setVal("denoiseThreshold", -80.0f);
             setVal("quackReduction", 60.0f); setVal("bodyDepth", 55.0f); setVal("deFizz", 60.0f);
             setVal("airShimmer", 50.0f);
+            setVal("micOpenness", 70.0f); setVal("micAirSheen", 65.0f); setVal("micProximity", 45.0f);
             setVal("eqLowGain", -1.5f); setVal("eqLowMidFreq", 750.0f); setVal("eqLowMidGain", 2.5f);
             setVal("eqHighMidFreq", 3500.0f); setVal("eqHighMidGain", 3.0f); setVal("eqHighGain", 1.5f);
             setVal("stereoWidth", 90.0f);
             setVal("reverbMix", 20.0f); setVal("reverbDecay", 38.0f); setVal("reverbSize", 1.0f); setVal("reverbTone", 7000.0f);
+            break;
+        case 8: // Takamine Piezo Rescue (Maximum Boxiness Elimination & Breath)
+            setVal("bodyType", 0); setVal("bodySize", 1.05f); setVal("bodyShape", 0.85f);
+            setVal("denoiseAmount", 55.0f); setVal("denoiseThreshold", -80.0f);
+            setVal("quackReduction", 75.0f); setVal("bodyDepth", 75.0f); setVal("deFizz", 65.0f);
+            setVal("airShimmer", 40.0f);
+            setVal("micOpenness", 90.0f); setVal("micAirSheen", 75.0f); setVal("micProximity", 65.0f);
+            setVal("eqLowGain", 0.5f); setVal("eqLowMidFreq", 400.0f); setVal("eqLowMidGain", -3.5f);
+            setVal("eqHighMidFreq", 3000.0f); setVal("eqHighMidGain", 1.0f); setVal("eqHighGain", 2.5f);
+            setVal("stereoWidth", 120.0f);
+            setVal("reverbMix", 22.0f); setVal("reverbDecay", 45.0f); setVal("reverbSize", 1.1f); setVal("reverbTone", 6500.0f);
+            break;
+        case 9: // Martin D-45 Deep Air (Huge Dreadnought Chest Warmth & Condenser Sparkle)
+            setVal("bodyType", 0); setVal("bodySize", 1.0f); setVal("bodyShape", 0.82f);
+            setVal("denoiseAmount", 50.0f); setVal("denoiseThreshold", -82.0f);
+            setVal("quackReduction", 60.0f); setVal("bodyDepth", 80.0f); setVal("deFizz", 55.0f);
+            setVal("airShimmer", 45.0f);
+            setVal("micOpenness", 88.0f); setVal("micAirSheen", 85.0f); setVal("micProximity", 80.0f);
+            setVal("eqLowGain", 2.0f); setVal("eqLowMidFreq", 420.0f); setVal("eqLowMidGain", -2.0f);
+            setVal("eqHighMidFreq", 3400.0f); setVal("eqHighMidGain", 2.0f); setVal("eqHighGain", 3.0f);
+            setVal("stereoWidth", 135.0f);
+            setVal("reverbMix", 24.0f); setVal("reverbDecay", 50.0f); setVal("reverbSize", 1.3f); setVal("reverbTone", 7200.0f);
             break;
     }
 }
@@ -303,7 +347,7 @@ void CyberAcousticEditor::paint(juce::Graphics& g)
 
     g.setColour(juce::Colour(0xffa19284));
     g.setFont(juce::FontOptions(10.5f));
-    g.drawText("Fluid Space Acoustic Cavity Physics, 10-Band D-Noise & Active 3D Tone Matrix", 22, 32, 460, 16, juce::Justification::left, false);
+    g.drawText("Fluid Space Acoustic Cavity Physics, Close-Mic Radiation & 4-Band Studio EQ", 22, 32, 520, 16, juce::Justification::left, false);
 
     // Section Dividing Lines (4 Columns)
     auto mainArea = getLocalBounds().reduced(14).withTrimmedTop(54);
@@ -318,7 +362,7 @@ void CyberAcousticEditor::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0xffd4974f));
     g.setFont(juce::FontOptions(11.5f));
     g.drawText("D-NOISE & TRANSDUCER", (int)mainArea.getX(), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
-    g.drawText("FLUID ACOUSTIC CAVITY", (int)(mainArea.getX() + colW), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
+    g.drawText("FLUID CAVITY & AIR MIC", (int)(mainArea.getX() + colW), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
     g.drawText("STUDIO 4-BAND EQ", (int)(mainArea.getX() + colW * 2.0f), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
     g.drawText("FLUID REVERB & MASTER", (int)(mainArea.getX() + colW * 3.0f), mainArea.getY() + 4, (int)colW, 20, juce::Justification::centred, false);
 }
@@ -375,32 +419,51 @@ void CyberAcousticEditor::resized()
     airShimmerSlider.setBounds(asArea.reduced(6));
 
     // =========================================================================
-    // --- Column 2: FLUID ACOUSTIC CAVITY ---
+    // --- Column 2: FLUID ACOUSTIC CAVITY & AIR MIC ---
     // =========================================================================
     auto col2 = mainArea.removeFromLeft(colW).reduced(6);
     col2.removeFromTop(26);
 
     bodyTypeBox.setBounds(col2.removeFromTop(28));
+    col2.removeFromTop(6);
+
+    int visH = (int)(col2.getHeight() * 0.40f);
+    visualizer.setBounds(col2.removeFromTop(visH));
     col2.removeFromTop(8);
 
-    int visH = (int)(col2.getHeight() * 0.58f);
-    visualizer.setBounds(col2.removeFromTop(visH));
-    col2.removeFromTop(10);
+    int cavityKnobH = (col2.getHeight() - 6) / 2;
 
-    auto bottomCavityRow = col2;
-    int subKnobW = bottomCavityRow.getWidth() / 3;
+    // Row 1: Cavity Geometry (Size, Shape, Depth)
+    auto topCavityRow = col2.removeFromTop(cavityKnobH);
+    int subKnobW = topCavityRow.getWidth() / 3;
 
-    auto szArea = bottomCavityRow.removeFromLeft(subKnobW);
+    auto szArea = topCavityRow.removeFromLeft(subKnobW);
     bodySizeLabel.setBounds(szArea.removeFromBottom(16));
     bodySizeSlider.setBounds(szArea);
 
-    auto shArea = bottomCavityRow.removeFromLeft(subKnobW);
+    auto shArea = topCavityRow.removeFromLeft(subKnobW);
     bodyShapeLabel.setBounds(shArea.removeFromBottom(16));
     bodyShapeSlider.setBounds(shArea);
 
-    auto dpArea = bottomCavityRow;
+    auto dpArea = topCavityRow;
     bodyDepthLabel.setBounds(dpArea.removeFromBottom(16));
     bodyDepthSlider.setBounds(dpArea);
+
+    col2.removeFromTop(6);
+
+    // Row 2: Fluid Air & Close-Mic Radiation (Openness, Sheen, Proximity)
+    auto bottomAirRow = col2;
+    auto opArea = bottomAirRow.removeFromLeft(subKnobW);
+    micOpennessLabel.setBounds(opArea.removeFromBottom(16));
+    micOpennessSlider.setBounds(opArea);
+
+    auto snArea = bottomAirRow.removeFromLeft(subKnobW);
+    micAirSheenLabel.setBounds(snArea.removeFromBottom(16));
+    micAirSheenSlider.setBounds(snArea);
+
+    auto pxArea = bottomAirRow;
+    micProximityLabel.setBounds(pxArea.removeFromBottom(16));
+    micProximitySlider.setBounds(pxArea);
 
     // =========================================================================
     // --- Column 3: STUDIO 4-BAND ACOUSTIC EQ ---

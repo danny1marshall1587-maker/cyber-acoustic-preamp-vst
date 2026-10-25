@@ -8,6 +8,15 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+namespace FluidMath {
+    // Constant-Time Rational Padé Approximant (~3 cycles, branchless, zero CPU spikes)
+    inline float fast_tanh(float x) noexcept {
+        x = std::clamp(x, -3.0f, 3.0f);
+        const float x2 = x * x;
+        return x * (27.0f + x2) / (27.0f + 9.0f * x2);
+    }
+}
+
 namespace CyberAcoustic {
 
 inline float flush_denormal(float v) {
@@ -16,7 +25,7 @@ inline float flush_denormal(float v) {
 }
 
 inline float bounded_tanh(float x) {
-    return std::tanh(x);
+    return FluidMath::fast_tanh(x);
 }
 
 // ============================================================================
@@ -332,6 +341,139 @@ public:
         float out = in_sample * (1.0f - body_depth_blend) + coupled_cavity * body_depth_blend * 1.35f;
 
         return flush_denormal(out);
+    }
+};
+
+// ============================================================================
+// Stage 2B: Fluid Air & Close-Mic Radiation Engine (Simulates Close Mic vs Pickup)
+// ============================================================================
+class FluidAirMicDSP {
+private:
+    static constexpr int kMaxAirDelay = 1024; // Power-of-two buffer; supports up to 192kHz path diff
+    float bodyWaveDelayLine[kMaxAirDelay] = {0.0f};
+    float holeWaveDelayLine[kMaxAirDelay] = {0.0f};
+    int writeIdx = 0;
+
+    // Exterior Fluid State Variables
+    float prevInputPressure = 0.0f;
+    float prevSurfaceVelocity = 0.0f;
+    float airSheenState = 0.0f;
+    float helmholtzLowpass = 0.0f;
+    float proximitySubState = 0.0f;
+
+    // All-Pass Acoustic Diffraction States (Simulates wave wrapping around guitar bout)
+    float diffX1 = 0.0f, diffY1 = 0.0f;
+    float diffX2 = 0.0f, diffY2 = 0.0f;
+
+    float sampleRate = 48000.0f;
+
+public:
+    FluidAirMicDSP() {
+        reset();
+    }
+
+    void init(float sr) noexcept {
+        sampleRate = sr > 0.0f ? sr : 48000.0f;
+        reset();
+    }
+
+    void reset() noexcept {
+        std::fill(std::begin(bodyWaveDelayLine), std::end(bodyWaveDelayLine), 0.0f);
+        std::fill(std::begin(holeWaveDelayLine), std::end(holeWaveDelayLine), 0.0f);
+        writeIdx = 0;
+        prevInputPressure = 0.0f;
+        prevSurfaceVelocity = 0.0f;
+        airSheenState = 0.0f;
+        helmholtzLowpass = 0.0f;
+        proximitySubState = 0.0f;
+        diffX1 = diffY1 = diffX2 = diffY2 = 0.0f;
+    }
+
+    // Call right after Acoustic Body Model!
+    // rawPiezoOrMic:  The pre-body signal (captures fast string transients before body damping)
+    // bodyResonance:  The output of Fluid Body Model
+    // openness:       0.0f (Inside the box/pickup) -> 1.0f (Wide open 3D mic in front of guitar)
+    // micAirSheen:    0.0f (Dark/Dynamic Mic)      -> 1.0f (Crisp Condenser Mic top-end air)
+    // closeProximity: 0.0f (16" Ambient Mic)       -> 1.0f (3" Close-Mic at 12th Fret)
+    inline float processSample(float rawPiezoOrMic, float bodyResonance,
+                               float openness = 0.80f,
+                               float micAirSheen = 0.65f,
+                               float closeProximity = 0.70f) noexcept
+    {
+        if (openness <= 0.001f && micAirSheen <= 0.001f && closeProximity <= 0.001f) {
+            return bodyResonance;
+        }
+
+        // 1. EXTRACT SOUNDHOLE HELMHOLTZ PISTON (Low-frequency air pump < 220Hz)
+        helmholtzLowpass += 0.028f * (bodyResonance - helmholtzLowpass);
+
+        // Write Top-Plate and Soundhole waves into exterior air propagation buffer
+        bodyWaveDelayLine[writeIdx] = bodyResonance;
+        holeWaveDelayLine[writeIdx] = helmholtzLowpass;
+
+        // 2. TRI-POINT WAVEFRONT GEOMETRY (Neck/String vs. Top Plate vs. Soundhole)
+        // As closeProximity increases (closer mic), the angle between the 12th fret,
+        // the bridge plate, and the soundhole widens, creating rich acoustic comb-relief
+        // that carves out the "boxy" 250Hz-400Hz piezo honk naturally!
+        const float distanceScale = 1.0f - (closeProximity * 0.55f);
+        const int plateDelaySamples = std::clamp(static_cast<int>((0.00028f + openness * 0.00035f) * distanceScale * sampleRate), 1, kMaxAirDelay - 1);
+        const int holeDelaySamples  = std::clamp(static_cast<int>((0.00085f + openness * 0.00075f) * distanceScale * sampleRate), 2, kMaxAirDelay - 1);
+
+        const int plateReadIdx = (writeIdx - plateDelaySamples + kMaxAirDelay) & (kMaxAirDelay - 1);
+        const int holeReadIdx  = (writeIdx - holeDelaySamples  + kMaxAirDelay) & (kMaxAirDelay - 1);
+
+        const float delayedPlateWave = bodyWaveDelayLine[plateReadIdx];
+        const float delayedHoleWave  = holeWaveDelayLine[holeReadIdx];
+
+        writeIdx = (writeIdx + 1) & (kMaxAirDelay - 1);
+
+        // 3. FREE-AIR PARTICLE ACCELERATION (The "Un-Boxed" Condenser Air Sheen)
+        // Piezo quack lives in the midrange (800Hz-2.5kHz). True mic "air" lives in 
+        // the 2nd derivative (acceleration) of the acoustic boundary above 7kHz, 
+        // smoothed slightly by air viscosity so it shimmers instead of clicking.
+        const float surfaceVelocity = rawPiezoOrMic - prevInputPressure;
+        prevInputPressure = rawPiezoOrMic;
+
+        const float airAcceleration = surfaceVelocity - prevSurfaceVelocity;
+        prevSurfaceVelocity = surfaceVelocity;
+
+        // Air viscosity low-pass on the acceleration creates velvety 10kHz+ condenser sheen
+        airSheenState = (airSheenState * 0.45f) + (airAcceleration * 0.55f);
+        const float condenserAirWave = FluidMath::fast_tanh(airSheenState * 2.2f) * micAirSheen * 0.55f;
+
+        // 4. CLOSE-MIC CAPSULE PROXIMITY EFFECT (Pressure-Gradient Low-End Weight)
+        // A directional mic placed 3-6 inches from the guitar gets a natural, chesty 
+        // 90Hz-130Hz warmth boost that moves with air velocity.
+        proximitySubState += 0.012f * (delayedPlateWave - proximitySubState);
+        const float proximityWarmth = proximitySubState * closeProximity * 0.65f;
+
+        // 5. EXTERIOR ACOUSTIC INTERFERENCE (Combining the 3 Wavefronts in Air)
+        // Notice we SUBTRACT a portion of the delayed soundhole wave from the body wave.
+        // In real life, this phase cancellation between the soundhole and top plate is 
+        // what makes an acoustic guitar sound "open and woody" instead of "trapped in a box"!
+        const float openAirInterference = (delayedPlateWave * 0.85f) 
+                                        - (delayedHoleWave * 0.50f * openness) 
+                                        + proximityWarmth;
+
+        // Blend between raw boxed body (openness = 0) and 3D exterior wave (openness = 1)
+        float exteriorField = (bodyResonance * (1.0f - openness * 0.65f)) 
+                            + (openAirInterference * openness) 
+                            + condenserAirWave;
+
+        // 6. Dual-Stage All-Pass Boundary Diffraction (Gives 3D "Space Around the Mic")
+        const float g1 = 0.38f * openness;
+        const float g2 = -0.24f * openness;
+
+        const float ap1 = -g1 * exteriorField + diffX1 + g1 * diffY1;
+        diffX1 = exteriorField;
+        diffY1 = ap1;
+
+        const float ap2 = -g2 * ap1 + diffX2 + g2 * diffY2;
+        diffX2 = ap1;
+        diffY2 = ap2;
+
+        // Final gentle capsule diaphragm compliance (prevents harsh transient spikes)
+        return FluidMath::fast_tanh(ap2 * 1.15f);
     }
 };
 
@@ -835,6 +977,7 @@ public:
     AcousticCyberDenoiser  denoiser;
     AcousticInertialCell   inertial_cell;
     FluidAcousticCavity    cavity_engine;
+    FluidAirMicDSP         air_mic_stage;
     SmartAcousticDeFizz    defizz_engine;
     Acoustic4BandEQ        eq_engine;
     AcousticFeedbackKiller feedback_killer;
@@ -846,6 +989,7 @@ public:
         denoiser.init(sr);
         inertial_cell.init(sr);
         cavity_engine.init(sr);
+        air_mic_stage.init(sr);
         defizz_engine.init(sr);
         eq_engine.init(sr);
         feedback_killer.init(sr);
@@ -856,6 +1000,7 @@ public:
         denoiser.reset();
         inertial_cell.reset();
         cavity_engine.reset();
+        air_mic_stage.reset();
         defizz_engine.reset();
         eq_engine.reset();
         feedback_killer.reset();
@@ -867,6 +1012,7 @@ public:
                         float denoise_amount,  float denoise_thresh_db,
                         bool  harmonic_shield, bool  listen_noise,
                         float quack_reduction, float body_depth,
+                        float mic_openness,    float mic_air_sheen,   float mic_proximity,
                         float defizz_amount,   float air_shimmer,
                         float eq_low_gain,     float eq_low_mid_freq, float eq_low_mid_gain,
                         float eq_high_mid_freq,float eq_high_mid_gain,float eq_high_gain,
@@ -890,7 +1036,10 @@ public:
 
         // Stage 2: 2-DOF Coupled Fluid Space Cavity
         cavity_engine.setBodyGeometry(body_type_preset, custom_size, custom_shape);
-        float s2 = cavity_engine.process(s1, body_depth);
+        float s2_body = cavity_engine.process(s1, body_depth);
+
+        // Stage 2B: Fluid Air & Close-Mic Radiation Engine (Simulates Close Mic vs Pickup Openness)
+        float s2 = air_mic_stage.processSample(s1, s2_body, mic_openness, mic_air_sheen, mic_proximity);
 
         // Stage 3: Zero-Fizz Subtractive High-Band Conditioning
         float s3 = defizz_engine.process(s2, defizz_amount, air_shimmer);

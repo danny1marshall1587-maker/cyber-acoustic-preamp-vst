@@ -70,6 +70,19 @@ private:
     juce::Label bodyDepthLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bodyDepthAttachment;
 
+    // Controls: Fluid Air & Close-Mic Radiation (Simulates Close Mic vs Pickup Openness)
+    juce::Slider micOpennessSlider;
+    juce::Label micOpennessLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> micOpennessAttachment;
+
+    juce::Slider micAirSheenSlider;
+    juce::Label micAirSheenLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> micAirSheenAttachment;
+
+    juce::Slider micProximitySlider;
+    juce::Label micProximityLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> micProximityAttachment;
+
     // Controls: Studio 4-Band Acoustic Parametric EQ (Active 3D Tone Matrix)
     juce::Slider eqLowGainSlider;
     juce::Label eqLowGainLabel;
