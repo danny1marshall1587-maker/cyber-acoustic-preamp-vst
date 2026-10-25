@@ -188,7 +188,7 @@ void CyberAcousticEditor::paint(juce::Graphics& g)
 
     // Title & Subtitle
     g.setColour(juce::Colour(0xffedd9be));
-    g.setFont(juce::FontOptions(18.0f).withExtraKerningFactor(0.08f));
+    g.setFont(juce::Font(juce::FontOptions(18.0f)).withExtraKerningFactor(0.08f));
     g.drawText("CYBER ACOUSTIC PREAMP", 20, 10, 320, 22, juce::Justification::left, false);
 
     g.setColour(juce::Colour(0xffa19284));
