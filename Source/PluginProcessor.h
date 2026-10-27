@@ -45,6 +45,7 @@ public:
 private:
     CyberAcoustic::CyberAcousticEngine dspEngineLeft;
     CyberAcoustic::CyberAcousticEngine dspEngineRight;
+    CyberAcoustic::FluidStereoDoublerDSP doublerDSP;
 
     std::atomic<float> currentAudioLevel { 0.0f };
     std::atomic<float> currentInputRms { -100.0f };

@@ -16,7 +16,7 @@ public:
 
     void setParameters(int bodyType, float bodySize, float bodyShape,
                        bool dualMode, int bodyTypeB, float bodySizeB, float bodyShapeB,
-                       float spread, bool phaseInvertB, float audioLevel) {
+                       float spread, bool phaseInvertB, bool doublerActive, float audioLevel) {
         currentBodyType = bodyType;
         currentBodySize = bodySize;
         currentBodyShape = bodyShape;
@@ -26,6 +26,7 @@ public:
         currentBodyShapeB = bodyShapeB;
         currentSpread = spread;
         currentPhaseInvertB = phaseInvertB;
+        isDoublerActive = doublerActive;
         currentLevel = std::max(currentLevel * 0.85f, audioLevel); // Decay envelope
         repaint();
     }
@@ -106,20 +107,27 @@ public:
             g.setFont(juce::FontOptions(11.5f));
 
             g.setColour(juce::Colour(0xffedd9be));
-            g.drawText("L: " + getShortBodyName(currentBodyType), topArea.removeFromLeft(halfW), juce::Justification::centredLeft, false);
+            g.drawText((isDoublerActive ? "PLAYER 1 (L): " : "L: ") + getShortBodyName(currentBodyType), topArea.removeFromLeft(halfW), juce::Justification::centredLeft, false);
 
             g.setColour(juce::Colour(0xffe29d72));
-            g.drawText("R: " + getShortBodyName(currentBodyTypeB), topArea, juce::Justification::centredRight, false);
+            g.drawText((isDoublerActive ? "PLAYER 2 (R): " : "R: ") + getShortBodyName(currentBodyTypeB), topArea, juce::Justification::centredRight, false);
 
             // Bottom Footer Status
             auto bottomArea = bounds.removeFromBottom(18.0f);
             g.setFont(juce::FontOptions(10.0f));
-            if (currentPhaseInvertB) {
+            if (isDoublerActive) {
+                g.setColour(juce::Colour(0xff38bdf8));
+                if (currentPhaseInvertB) {
+                    g.drawText("DUAL STEREO DOUBLER \u2022 DRIFT & AIR BLEED \u2022 \u03A6 INV R", bottomArea, juce::Justification::centred, false);
+                } else {
+                    g.drawText("DUAL STEREO DOUBLER \u2022 DUAL-TRACKED SEPARATION (11-22ms DRIFT)", bottomArea, juce::Justification::centred, false);
+                }
+            } else if (currentPhaseInvertB) {
                 g.setColour(juce::Colour(0xfff59e0b));
-                g.drawText("DUAL STEREO • RIGHT POLARITY INVERTED [WIDE ACOUSTIC TRICK]", bottomArea, juce::Justification::centred, false);
+                g.drawText("DUAL STEREO \u2022 RIGHT POLARITY INVERTED [WIDE ACOUSTIC TRICK]", bottomArea, juce::Justification::centred, false);
             } else {
                 g.setColour(juce::Colour(0xffa19284));
-                g.drawText("DUAL STEREO • DUAL DISCRETE ACOUSTIC CAVITIES", bottomArea, juce::Justification::centred, false);
+                g.drawText("DUAL STEREO \u2022 DUAL DISCRETE ACOUSTIC CAVITIES", bottomArea, juce::Justification::centred, false);
             }
         }
     }
@@ -130,6 +138,7 @@ private:
     float currentBodyShape = 0.5f;
 
     bool isDualMode = false;
+    bool isDoublerActive = true;
     int currentBodyTypeB = 2;
     float currentBodySizeB = 1.0f;
     float currentBodyShapeB = 0.5f;

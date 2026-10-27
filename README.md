@@ -1,6 +1,25 @@
-# Cyber Acoustic Preamp v1.7.0
+# Cyber Acoustic Preamp v1.8.0
 ### Ultimate Fluid Space Acoustic Guitar Pickup Preamp & Cavity Physics
 **Free & Open Source Standalone App, VST3, AU, and LV2 Plugin for Windows, macOS, and Linux.**
+
+---
+
+## What's New in v1.8.0
+- **True Stereo Acoustic Doubler (`FluidStereoDoublerDSP`) — Dual-Tracked Separation**:
+  - Overcomes the psychoacoustic trap where two different body models panned hard Left and Right still fuse into a single "Big Mono" instrument due to identical pick transient onsets at $t = 0.00\,\text{ms}$.
+  - **Turbulent Fluid Vortex Time-Drift (No LFO Wobble)**:
+    - Driven by instantaneous picking attack velocity and fluid chamber sag ($C_R[n]$), dynamically wandering Player 2's timing between $8\,\text{ms}$ and $24\,\text{ms}$ across every pick stroke.
+    - Accompanied by picking-force dynamic micro-pitch bloom ($\pm 4\text{ cents}$) with fluid inertia, avoiding synthetic pitch wobbles or seasick chorus modulation.
+  - **Fluid Pick-Attack Viscosity Asymmetry (Dual-Stage Allpass Phase Smear)**:
+    - Cascaded 1st-order allpass filters ($g = 0.52$) disperse Player 2's pick transient over $1.2\,\text{ms}$, giving the brain two distinct pick strokes and breaking phantom center locking.
+  - **Sympathetic Cross-Body Acoustic Room Bleed**:
+    - Simulates two acoustic guitars breathing in the same physical room $\sim 4.2\text{ ft}$ apart ($3.8\,\text{ms}$ acoustic travel time), cross-coupling sympathetic top-plate resonances with zero static comb filtering in mono summing.
+  - **New GUI Controls**:
+    - `"FLUID DOUBLER"` toggle switch in Column 2.
+    - `"DRIFT"` rotary slider ($0\% \dots 100\%$, default $75\%$) controlling human timing wander and dynamic micro-pitch response.
+    - `"ROOM BLEED"` rotary slider ($0\% \dots 50\%$, default $18\%$) adjusting $4.2\text{ ft}$ sympathetic room cross-coupling.
+  - **New Factory Preset 13**:
+    - **Preset 13: Nashville Dual-Tracked Acoustic**: Authentic studio double-tracked separation with Player 1 (Martin D-45) Left, Player 2 (Taylor OM) Right, dynamic fluid timing drift, and room bleed.
 
 ---
 

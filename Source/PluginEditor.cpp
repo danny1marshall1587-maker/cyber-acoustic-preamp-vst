@@ -19,6 +19,7 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
     presetSelector.addItem("Preset: Bluegrass F-5 Mandolin Chop", 10);
     presetSelector.addItem("Preset: Dual Stereo - Dread & OM Split", 11);
     presetSelector.addItem("Preset: Dual Stereo - Jumbo & Mandolin", 12);
+    presetSelector.addItem("Preset: Nashville Dual-Tracked Acoustic", 13);
     presetSelector.setSelectedId(1, juce::dontSendNotification);
     presetSelector.onChange = [this]() {
         loadPreset(presetSelector.getSelectedId());
@@ -119,6 +120,10 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
     dualModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         audioProcessor.apvts, "bodyDualMode", dualModeButton);
 
+    setupToggle(doublerButton, "FLUID DOUBLER");
+    doublerAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        audioProcessor.apvts, "doublerActive", doublerButton);
+
     setupToggle(phaseInvertButton, "Φ INV R");
     phaseInvertAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         audioProcessor.apvts, "bodyPhaseInvertB", phaseInvertButton);
@@ -153,6 +158,14 @@ CyberAcousticEditor::CyberAcousticEditor(CyberAcousticProcessor& p)
     setupRotary(bodySpreadSlider, bodySpreadLabel, "SPREAD", "%");
     bodySpreadAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.apvts, "bodySpread", bodySpreadSlider);
+
+    setupRotary(doublerSlopSlider, doublerSlopLabel, "DRIFT", "%");
+    doublerSlopAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "doublerSlop", doublerSlopSlider);
+
+    setupRotary(doublerCouplingSlider, doublerCouplingLabel, "ROOM BLEED", "%");
+    doublerCouplingAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessor.apvts, "doublerCoupling", doublerCouplingSlider);
 
     // 3B. Fluid Air & Close-Mic Radiation (Simulates Close Mic vs Pickup Openness)
     setupRotary(micOpennessSlider, micOpennessLabel, "MIC OPENNESS", "%");
@@ -255,6 +268,11 @@ CyberAcousticEditor::~CyberAcousticEditor()
 void CyberAcousticEditor::timerCallback()
 {
     bool dual = dualModeButton.getToggleState();
+    bool doubler = doublerButton.getToggleState();
+
+    doublerButton.setEnabled(dual);
+    doublerSlopSlider.setEnabled(dual && doubler);
+    doublerCouplingSlider.setEnabled(dual && doubler);
     bodyTypeBBox.setEnabled(dual);
     phaseInvertButton.setEnabled(dual);
     bodySizeBSlider.setEnabled(dual);
@@ -266,6 +284,8 @@ void CyberAcousticEditor::timerCallback()
     bodySizeBLabel.setColour(juce::Label::textColourId, dual ? activeLabelCol : dimmedLabelCol);
     bodyShapeBLabel.setColour(juce::Label::textColourId, dual ? activeLabelCol : dimmedLabelCol);
     bodySpreadLabel.setColour(juce::Label::textColourId, dual ? activeLabelCol : dimmedLabelCol);
+    doublerSlopLabel.setColour(juce::Label::textColourId, (dual && doubler) ? activeLabelCol : dimmedLabelCol);
+    doublerCouplingLabel.setColour(juce::Label::textColourId, (dual && doubler) ? activeLabelCol : dimmedLabelCol);
 
     int bodyType = bodyTypeBox.getSelectedItemIndex();
     float bodySize = (float)bodySizeSlider.getValue();
@@ -281,7 +301,7 @@ void CyberAcousticEditor::timerCallback()
 
     visualizer.setParameters(bodyType, bodySize, bodyShape,
                              dual, bodyTypeB, bodySizeB, bodyShapeB,
-                             spread, phaseInvertB, audioLevel);
+                             spread, phaseInvertB, (dual && doubler), audioLevel);
     inputMeter.setLevels(audioProcessor.getInputRmsDb(), audioProcessor.getInputPeakDb());
 }
 
@@ -299,6 +319,9 @@ void CyberAcousticEditor::loadPreset(int id)
         setVal("bodyShapeB", 0.5f);
         setVal("bodySpread", 100.0f);
         setVal("bodyPhaseInvertB", 0.0f);
+        setVal("doublerActive", 1.0f);
+        setVal("doublerSlop", 75.0f);
+        setVal("doublerCoupling", 18.0f);
     };
 
     switch (id) {
@@ -452,6 +475,7 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("bodyType", 1); setVal("bodySize", 1.20f); setVal("bodyShape", 0.65f); // Jumbo left
             setVal("bodyTypeB", 8); setVal("bodySizeB", 0.80f); setVal("bodyShapeB", 0.20f); // F-5 Mandolin right
             setVal("bodySpread", 95.0f); setVal("bodyPhaseInvertB", 0.0f);
+            setVal("doublerActive", 1.0f); setVal("doublerSlop", 75.0f); setVal("doublerCoupling", 18.0f);
             setVal("denoiseAmount", 55.0f); setVal("denoiseThreshold", -80.0f);
             setVal("quackReduction", 65.0f); setVal("bodyDepth", 75.0f); setVal("deFizz", 60.0f);
             setVal("airShimmer", 45.0f);
@@ -461,6 +485,24 @@ void CyberAcousticEditor::loadPreset(int id)
             setVal("stereoWidth", 130.0f);
             setVal("reverbType", 0); // Studio Room
             setVal("reverbMix", 20.0f); setVal("reverbDecay", 40.0f); setVal("reverbSize", 1.1f); setVal("reverbTone", 7000.0f);
+            break;
+        case 13: // Nashville Dual-Tracked Acoustic (Two Human Players, Fluid Drift & Room Bleed)
+            setVal("bodyDualMode", 1.0f);
+            setVal("doublerActive", 1.0f);
+            setVal("doublerSlop", 82.0f);     // ~14-22ms dynamic fluid drift + dynamic micro-pitch
+            setVal("doublerCoupling", 22.0f); // 4.2ft sympathetic air bleed
+            setVal("bodyType", 0); setVal("bodySize", 1.05f); setVal("bodyShape", 0.85f);  // Player 1: Martin D-45 Dread
+            setVal("bodyTypeB", 2); setVal("bodySizeB", 0.95f); setVal("bodyShapeB", 0.40f); // Player 2: Taylor OM
+            setVal("bodySpread", 100.0f); setVal("bodyPhaseInvertB", 0.0f);
+            setVal("denoiseAmount", 50.0f); setVal("denoiseThreshold", -82.0f);
+            setVal("quackReduction", 65.0f); setVal("bodyDepth", 75.0f); setVal("deFizz", 55.0f);
+            setVal("airShimmer", 45.0f);
+            setVal("micOpenness", 88.0f); setVal("micAirSheen", 80.0f); setVal("micProximity", 75.0f);
+            setVal("eqLowGain", 1.0f); setVal("eqLowMidFreq", 420.0f); setVal("eqLowMidGain", -2.5f);
+            setVal("eqHighMidFreq", 3400.0f); setVal("eqHighMidGain", 2.0f); setVal("eqHighGain", 2.5f);
+            setVal("stereoWidth", 125.0f);
+            setVal("reverbType", 1); // Concert Hall
+            setVal("reverbMix", 20.0f); setVal("reverbDecay", 45.0f); setVal("reverbSize", 1.2f); setVal("reverbTone", 6500.0f);
             break;
     }
 }
@@ -584,10 +626,11 @@ void CyberAcousticEditor::resized()
     auto col2 = mainArea.removeFromLeft(colW).reduced(6);
     col2.removeFromTop(26);
 
-    // Row 1: Dual Mode & Phase Invert Toggles
+    // Row 1: Dual Mode, Doubler & Phase Invert Toggles
     auto dualRow = col2.removeFromTop(24);
-    int dHalfW = dualRow.getWidth() / 2;
-    dualModeButton.setBounds(dualRow.removeFromLeft(dHalfW).reduced(2, 0));
+    int dThirdW = dualRow.getWidth() / 3;
+    dualModeButton.setBounds(dualRow.removeFromLeft(dThirdW).reduced(2, 0));
+    doublerButton.setBounds(dualRow.removeFromLeft(dThirdW).reduced(2, 0));
     phaseInvertButton.setBounds(dualRow.reduced(2, 0));
     col2.removeFromTop(4);
 
@@ -623,20 +666,25 @@ void CyberAcousticEditor::resized()
 
     col2.removeFromTop(4);
 
-    // Row 4: Cavity B & Stereo Spread (Size B, Shape B, Spread)
+    // Row 4: Cavity B, Stereo Spread & Doubler Drift (Size B, Shape B, Spread, Drift)
     auto rowB = col2.removeFromTop(cavityKnobH);
+    int subKnobW4 = rowB.getWidth() / 4;
 
-    auto szBArea = rowB.removeFromLeft(subKnobW);
+    auto szBArea = rowB.removeFromLeft(subKnobW4);
     bodySizeBLabel.setBounds(szBArea.removeFromBottom(16));
     bodySizeBSlider.setBounds(szBArea);
 
-    auto shBArea = rowB.removeFromLeft(subKnobW);
+    auto shBArea = rowB.removeFromLeft(subKnobW4);
     bodyShapeBLabel.setBounds(shBArea.removeFromBottom(16));
     bodyShapeBSlider.setBounds(shBArea);
 
-    auto spArea = rowB;
+    auto spArea = rowB.removeFromLeft(subKnobW4);
     bodySpreadLabel.setBounds(spArea.removeFromBottom(16));
     bodySpreadSlider.setBounds(spArea);
+
+    auto drArea = rowB;
+    doublerSlopLabel.setBounds(drArea.removeFromBottom(16));
+    doublerSlopSlider.setBounds(drArea);
 
     col2.removeFromTop(4);
 
@@ -749,9 +797,13 @@ void CyberAcousticEditor::resized()
 
     col4.removeFromTop(10);
 
-    // Part C: Stereo Width & Output Gain
+    // Part C: Room Bleed, Stereo Width & Output Gain
     auto masterRow = col4;
-    int mKnobW = masterRow.getWidth() / 2;
+    int mKnobW = masterRow.getWidth() / 3;
+
+    auto rcArea = masterRow.removeFromLeft(mKnobW);
+    doublerCouplingLabel.setBounds(rcArea.removeFromBottom(16));
+    doublerCouplingSlider.setBounds(rcArea.reduced(4));
 
     auto swArea = masterRow.removeFromLeft(mKnobW);
     stereoWidthLabel.setBounds(swArea.removeFromBottom(16));

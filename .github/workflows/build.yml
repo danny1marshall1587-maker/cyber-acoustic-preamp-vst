@@ -94,11 +94,42 @@ jobs:
           name: "Cyber Acoustic Preamp ${{ github.ref_name }}"
           tag_name: ${{ github.ref_name }}
           body: |
-            # Cyber Acoustic Preamp ${{ github.ref_name }} — World-Class Modulated Dual-Tank Reverb Release
+            # Cyber Acoustic Preamp ${{ github.ref_name }} — True Stereo Acoustic Doubler Release
             
             **Ultimate Fluid Space Acoustic Guitar & Mandolin Pickup Preamp & Cavity Physics**
             *Free and Open Source Standalone Application and VST3 / AU / LV2 Plugin*
             
+            ### What's New in v1.8.0:
+            - **True Stereo Acoustic Doubler (`FluidStereoDoublerDSP`) — Dual-Tracked Separation**:
+              - Resolves the psychoacoustic trap where two body models still sound like "Big Mono" due to identical pick transient onsets locking the auditory cortex.
+              - **Turbulent Fluid Vortex Time-Drift (No LFO Wobble)**:
+                - Dynamic timing drift ($8\text{ to }24\,\text{ms}$) driven by picking attack energy, fluid chamber sag ($C_R[n]$), and non-repeating sub-audio incommensurate waves.
+                - Picking-force dynamic micro-pitch bloom ($\pm 4\text{ cents}$) with fluid inertia, avoiding synthetic chorus modulation.
+              - **Fluid Pick-Attack Viscosity Asymmetry (Dual-Stage Allpass Phase Smear)**:
+                - Cascaded allpass filters ($g = 0.52$) disperse Player 2's pick transient over $1.2\,\text{ms}$, giving the brain two distinct pick strokes and breaking phantom center locking.
+              - **Sympathetic Cross-Body Acoustic Room Bleed**:
+                - Simulates two guitars breathing in the same physical space $\sim 4.2\text{ ft}$ apart ($3.8\,\text{ms}$ travel time), cross-coupling sympathetic top-plate resonances with zero static comb filtering in mono summing.
+              - **New GUI Controls**:
+                - `"FLUID DOUBLER"` toggle switch in Column 2.
+                - `"DRIFT"` rotary slider ($0\% \dots 100\%$, default $75\%$) controlling human timing wander and dynamic micro-pitch response.
+                - `"ROOM BLEED"` rotary slider ($0\% \dots 50\%$, default $18\%$) adjusting $4.2\text{ ft}$ sympathetic room cross-coupling.
+              - **New Factory Preset 13**:
+                - **Preset 13: Nashville Dual-Tracked Acoustic**: Authentic studio double-tracked separation with Player 1 (Martin D-45) Left, Player 2 (Taylor OM) Right, dynamic fluid timing drift, and room bleed.
+
+            ### What's New in v1.7.0:
+            - **Dual Body Shape Stereo Split (Two Simultaneous Acoustic Bodies from One Guitar)**:
+              - Run two physically distinct 2-DOF acoustic cavity models concurrently from a single mono acoustic guitar input (e.g. Dreadnought on Left, OM or Mandolin on Right).
+              - `"DUAL STEREO"` toggle switch in Column 2.
+            - **Constant-Power Stereo Spread Control (`bodySpread`)**:
+              - Trigonometric constant-power panning matrix ($g_1^2 + g_2^2 \equiv 1.0$) preserving 100% total acoustic RMS energy across the entire spread range.
+            - **Channel B Polarity Inversion ("Φ INV R" Acoustic Widening Trick)**:
+              - Inverts Right body cavity signal polarity with click-free 15ms smoothing, creating a massive 3D acoustic soundstage.
+            - **Twin Guitar Body Silhouette Visualizer**:
+              - Renders twin side-by-side acoustic guitars in dual mode (golden spruce Left body, deep rosewood Right body, active `[Φ 180° INV]` badge, and central `SPREAD: XX%` readout).
+            - **Dual Factory Presets**:
+              - **Preset 11: Dual Stereo - Dread & OM Split**
+              - **Preset 12: Dual Stereo - Jumbo & Mandolin Split**
+
             ### What's New in v1.6.0:
             - **World-Class Modulated Dual-Tank Acoustic Reverb Engine (Dattorro / Lexicon Topologies)**:
               - Replaced basic FDN tank algorithms with a studio-grade, high-density Figure-of-Eight Dual-Tank Modulated Reverb Engine.

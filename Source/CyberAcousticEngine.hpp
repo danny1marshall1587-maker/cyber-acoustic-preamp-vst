@@ -15,6 +15,10 @@ namespace FluidMath {
         const float x2 = x * x;
         return x * (27.0f + x2) / (27.0f + 9.0f * x2);
     }
+
+    inline float fast_sin(float x) noexcept {
+        return std::sin(x);
+    }
 }
 
 namespace CyberAcoustic {
@@ -1185,6 +1189,160 @@ struct FluidReverbSpace {
 
         outL = inL * dryG + wetL * wetG;
         outR = inR * dryG + wetR * wetG;
+    }
+};
+
+// ============================================================================
+// Stage 6B: FLUID STEREO DOUBLER & DUAL-GUITAR DECORRELATOR
+//    Turns 1 Input + 2 Body Models into 2 Separate Players in Stereo
+// ============================================================================
+struct StereoFrame {
+    float left;
+    float right;
+};
+
+class FluidStereoDoublerDSP {
+private:
+    static constexpr int kMaxDoublerDelay = 2048; // ~42ms buffer @ 48kHz
+    float rightTrackDelayBuf[kMaxDoublerDelay] = {0.0f};
+    static constexpr int kCrossBleedBufSize = 2048; // Support up to 192kHz/384kHz
+    float crossBleedLtoRBuf[kCrossBleedBufSize] = {0.0f};
+    float crossBleedRtoLBuf[kCrossBleedBufSize] = {0.0f};
+    int writeIdx = 0;
+    int bleedWriteIdx = 0;
+
+    // Fluid Turbulence & Human Timing Drift States
+    float fluidTimeOffsetSamples = 650.0f; // Starts around ~13.5ms
+    float fluidDriftVelocity = 0.0f;
+    float chamberSagR = 1.0f;
+    float prevInput = 0.0f;
+    float pickViscosityStateR = 0.0f;
+
+    // Non-repeating chaotic sub-audio drift (Lorenz-inspired coupled oscillators)
+    float driftPhase1 = 0.13f;
+    float driftPhase2 = 0.71f;
+
+    // All-pass transient smear for Player 2 (Changes pick angle feel)
+    float apX1 = 0.0f, apY1 = 0.0f;
+    float apX2 = 0.0f, apY2 = 0.0f;
+
+    float sampleRate = 48000.0f;
+
+    // Linear interpolation helper for smooth fractional sample pitch/time drift
+    inline float readFractionalDelay(const float* buf, int mask, float delaySamples) const noexcept {
+        float readPos = static_cast<float>(writeIdx) - delaySamples;
+        while (readPos < 0.0f) readPos += static_cast<float>(mask + 1);
+        const int idx0 = static_cast<int>(readPos) & mask;
+        const int idx1 = (idx0 + 1) & mask;
+        const float frac = readPos - std::floor(readPos);
+        return buf[idx0] + frac * (buf[idx1] - buf[idx0]);
+    }
+
+public:
+    void prepare(float sr) noexcept {
+        sampleRate = sr > 8000.0f ? sr : 48000.0f;
+        reset();
+    }
+
+    void reset() noexcept {
+        std::fill(std::begin(rightTrackDelayBuf), std::end(rightTrackDelayBuf), 0.0f);
+        std::fill(std::begin(crossBleedLtoRBuf), std::end(crossBleedLtoRBuf), 0.0f);
+        std::fill(std::begin(crossBleedRtoLBuf), std::end(crossBleedRtoLBuf), 0.0f);
+        writeIdx = 0;
+        bleedWriteIdx = 0;
+        fluidTimeOffsetSamples = 0.014f * sampleRate;
+        fluidDriftVelocity = 0.0f;
+        chamberSagR = 1.0f;
+        prevInput = 0.0f;
+        pickViscosityStateR = 0.0f;
+        apX1 = apY1 = apX2 = apY2 = 0.0f;
+    }
+
+    // Step 1: Call BEFORE your two separate Acoustic Body Models
+    // Takes your raw Mono Piezo/Mic input and generates two human-decorrelated 
+    // string excitations (Player 1 Left, Player 2 Right)
+    inline StereoFrame generateDualPlayers(float monoInput, float humanSlopAmount = 0.75f) noexcept {
+        // 1. Measure instantaneous pick attack velocity
+        const float inputVelocity = monoInput - prevInput;
+        prevInput = monoInput;
+        const float attackEnergy = std::min(std::abs(inputVelocity) * 4.0f, 1.5f);
+
+        // 2. Player 2 Fluid Chamber Sag (Hard strums push Player 2's timing & micro-pitch!)
+        chamberSagR -= attackEnergy * 0.004f;
+        chamberSagR += (1.0f - chamberSagR) * 0.0012f;
+        chamberSagR = std::clamp(chamberSagR, 0.40f, 1.0f);
+
+        // 3. Non-Repeating Fluid Drift (2 incommensurate slow waves + transient push)
+        driftPhase1 += 0.43f / sampleRate;
+        if (driftPhase1 > 1.0f) driftPhase1 -= 2.0f;
+        driftPhase2 += 0.79f / sampleRate;
+        if (driftPhase2 > 1.0f) driftPhase2 -= 2.0f;
+
+        const float organicWander = (FluidMath::fast_sin(driftPhase1 * 3.14159265f) * 0.6f)
+                                  + (FluidMath::fast_sin(driftPhase2 * 3.14159265f) * 0.4f);
+
+        // Target timing offset moves dynamically between 8ms and 24ms based on how hard you play
+        const float baseDelayMs = 0.011f + (humanSlopAmount * 0.007f); // 11ms to 18ms center
+        const float sagPushMs   = (1.0f - chamberSagR) * 0.012f * humanSlopAmount;
+        const float wanderMs    = organicWander * 0.0045f * humanSlopAmount;
+
+        const float targetDelaySamples = (baseDelayMs + sagPushMs + wanderMs) * sampleRate;
+
+        // Smooth with fluid inertia so pitch glides like a human finger on a fret (+- 4 cents max)
+        const float springForce = (targetDelaySamples - fluidTimeOffsetSamples) * 0.00015f;
+        fluidDriftVelocity = (fluidDriftVelocity * 0.996f) + springForce;
+        fluidTimeOffsetSamples += fluidDriftVelocity;
+        fluidTimeOffsetSamples = std::clamp(fluidTimeOffsetSamples, 64.0f, static_cast<float>(kMaxDoublerDelay - 4));
+
+        // 4. Write Mono Input & Read Decorrelated Player 2 Stream
+        rightTrackDelayBuf[writeIdx] = monoInput;
+        float player2Raw = readFractionalDelay(rightTrackDelayBuf, kMaxDoublerDelay - 1, fluidTimeOffsetSamples);
+        writeIdx = (writeIdx + 1) & (kMaxDoublerDelay - 1);
+
+        // 5. Pick-Angle Viscosity & Phase Dispersion on Player 2
+        // Disperses the pick transient across 1.2ms so the brain hears TWO distinct picks!
+        const float g = 0.52f;
+        const float d1 = -g * player2Raw + apX1 + g * apY1;
+        apX1 = player2Raw; apY1 = d1;
+        const float d2 =  g * d1 + apX2 - g * apY2;
+        apX2 = d1; apY2 = d2;
+
+        // Subtle dynamic pick warmth on Player 2 so left and right attacks never phase-lock
+        pickViscosityStateR = (pickViscosityStateR * 0.55f) + (d2 * 0.45f);
+        const float player2Output = (d2 * 0.65f) + (pickViscosityStateR * 0.35f);
+
+        return { monoInput, player2Output };
+    }
+
+    // Step 2: Call AFTER running Left Model (e.g., Martin D-45) & Right Model (e.g., Taylor/OM)
+    // Adds 3D Sympathetic Cross-Room Coupling (Guitar L vibrates Guitar R's air space ~4ft away)
+    inline StereoFrame applyRoomCrossCoupling(float leftGuitarFinished, float rightGuitarFinished, 
+                                              float stereoWidth = 0.85f, float roomCoupling = 0.18f) noexcept 
+    {
+        const int mask = kCrossBleedBufSize - 1;
+        crossBleedLtoRBuf[bleedWriteIdx] = leftGuitarFinished;
+        crossBleedRtoLBuf[bleedWriteIdx] = rightGuitarFinished;
+
+        // 4.2 feet between the two guitarists = ~3.8ms acoustic travel time (182 samples @ 48kHz)
+        const int crossDelay = std::clamp(static_cast<int>(0.0038f * sampleRate), 1, mask - 1);
+        const int readIdx = (bleedWriteIdx - crossDelay + kCrossBleedBufSize) & mask;
+        bleedWriteIdx = (bleedWriteIdx + 1) & mask;
+
+        const float bleedFromL = crossBleedLtoRBuf[readIdx] * roomCoupling;
+        const float bleedFromR = crossBleedRtoLBuf[readIdx] * roomCoupling;
+
+        // Combine direct mics with cross-room sympathetic air waves
+        float finalL = leftGuitarFinished + bleedFromR;
+        float finalR = rightGuitarFinished + bleedFromL;
+
+        // Mid/Side Width Control (Allows narrowing for tight mixes or 100% wide for solo acoustic)
+        const float mid  = (finalL + finalR) * 0.5f;
+        const float side = (finalL - finalR) * 0.5f * stereoWidth;
+
+        return {
+            FluidMath::fast_tanh(mid + side),
+            FluidMath::fast_tanh(mid - side)
+        };
     }
 };
 

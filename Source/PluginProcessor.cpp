@@ -74,6 +74,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout CyberAcousticProcessor::crea
     params.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID("bodyPhaseInvertB", 1), "Phase Invert Right", false));
 
+    // True Stereo Acoustic Doubler (Fluid Time-Drift, Dynamic Micro-Pitch & Room Cross-Bleed)
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID("doublerActive", 1), "Fluid Stereo Doubler", true));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("doublerSlop", 1), "Human Time Drift", 0.0f, 100.0f, 75.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("doublerCoupling", 1), "Room Cross-Bleed", 0.0f, 50.0f, 18.0f));
+
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("quackReduction", 1), "Anti-Quack Inertia", 0.0f, 100.0f, 60.0f));
 
@@ -178,6 +188,7 @@ void CyberAcousticProcessor::prepareToPlay(double sampleRate, int /*samplesPerBl
 {
     dspEngineLeft.init((float)sampleRate);
     dspEngineRight.init((float)sampleRate);
+    doublerDSP.prepare((float)sampleRate);
     smoothedSpread = 1.0f;
     currentPhaseB = 1.0f;
 }
@@ -186,6 +197,7 @@ void CyberAcousticProcessor::releaseResources()
 {
     dspEngineLeft.reset();
     dspEngineRight.reset();
+    doublerDSP.reset();
 }
 
 bool CyberAcousticProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -231,6 +243,10 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     float bodySpread = apvts.getRawParameterValue("bodySpread")->load() / 100.0f;
     bool bodyPhaseInvertB = apvts.getRawParameterValue("bodyPhaseInvertB")->load() > 0.5f;
     float targetPhaseB = bodyPhaseInvertB ? -1.0f : 1.0f;
+
+    bool doublerActive = apvts.getRawParameterValue("doublerActive")->load() > 0.5f;
+    float doublerSlop = apvts.getRawParameterValue("doublerSlop")->load() / 100.0f;
+    float doublerCoupling = apvts.getRawParameterValue("doublerCoupling")->load() / 100.0f;
 
     float quack = apvts.getRawParameterValue("quackReduction")->load() / 100.0f;
     float depth = apvts.getRawParameterValue("bodyDepth")->load() / 100.0f;
@@ -343,10 +359,17 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 float sL = sigA * g1 + sigB * g2;
                 float sR = sigA * g2 + sigB * g1;
 
-                float mid = 0.5f * (sL + sR);
-                float side = 0.5f * (sL - sR) * width;
-                float dryL = mid + side;
-                float dryR = mid - side;
+                float dryL = 0.0f, dryR = 0.0f;
+                if (doublerActive) {
+                    CyberAcoustic::StereoFrame coupled = doublerDSP.applyRoomCrossCoupling(sL, sR, width, doublerCoupling);
+                    dryL = coupled.left;
+                    dryR = coupled.right;
+                } else {
+                    float mid = 0.5f * (sL + sR);
+                    float side = 0.5f * (sL - sR) * width;
+                    dryL = mid + side;
+                    dryR = mid - side;
+                }
 
                 dspEngineLeft.processStereoReverb(dryL, dryR, revSize, bodyShapeA, revTone, revDecay, revMix, revType, outWetL, outWetR);
                 outWetL *= gainLin;
@@ -413,13 +436,22 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 currentPhaseB = currentPhaseB * 0.995f + targetPhaseB * 0.005f;
                 smoothedSpread = smoothedSpread * 0.995f + bodySpread * 0.005f;
 
-                float sigA = dspEngineLeft.processMonoBody(guitarMono,
+                float player1 = guitarMono;
+                float player2 = guitarMono;
+
+                if (doublerActive) {
+                    CyberAcoustic::StereoFrame players = doublerDSP.generateDualPlayers(guitarMono, doublerSlop);
+                    player1 = players.left;
+                    player2 = players.right;
+                }
+
+                float sigA = dspEngineLeft.processMonoBody(player1,
                                                           denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
                                                           quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
                                                           eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
                                                           bodyTypeA, bodySizeA, bodyShapeA);
 
-                float sigB = dspEngineRight.processMonoBody(guitarMono,
+                float sigB = dspEngineRight.processMonoBody(player2,
                                                            denoiseAmt, denoiseThresh, denoiseHarmonicShield, denoiseListen,
                                                            quack, depth, micOpenness, micAirSheen, micProximity, defizz, shimmer,
                                                            eqLow, eqLowMidF, eqLowMidG, eqHighMidF, eqHighMidG, eqHigh,
@@ -436,11 +468,18 @@ void CyberAcousticProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 float sL = sigA * g1 + sigB * g2;
                 float sR = sigA * g2 + sigB * g1;
 
-                // Stereo Width (M/S Adjust)
-                float mid = 0.5f * (sL + sR);
-                float side = 0.5f * (sL - sR) * width;
-                float dryL = mid + side;
-                float dryR = mid - side;
+                float dryL = 0.0f, dryR = 0.0f;
+                if (doublerActive) {
+                    CyberAcoustic::StereoFrame coupled = doublerDSP.applyRoomCrossCoupling(sL, sR, width, doublerCoupling);
+                    dryL = coupled.left;
+                    dryR = coupled.right;
+                } else {
+                    // Stereo Width (M/S Adjust)
+                    float mid = 0.5f * (sL + sR);
+                    float side = 0.5f * (sL - sR) * width;
+                    dryL = mid + side;
+                    dryR = mid - side;
+                }
 
                 // True Stereo Modulated Reverb Space
                 dspEngineLeft.processStereoReverb(dryL, dryR, revSize, bodyShapeA, revTone, revDecay, revMix, revType, outWetL, outWetR);

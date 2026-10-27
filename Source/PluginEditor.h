@@ -177,6 +177,9 @@ private:
     juce::ToggleButton dualModeButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> dualModeAttachment;
 
+    juce::ToggleButton doublerButton;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> doublerAttachment;
+
     juce::ToggleButton phaseInvertButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> phaseInvertAttachment;
 
@@ -194,6 +197,14 @@ private:
     juce::Slider bodySpreadSlider;
     juce::Label bodySpreadLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bodySpreadAttachment;
+
+    juce::Slider doublerSlopSlider;
+    juce::Label doublerSlopLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> doublerSlopAttachment;
+
+    juce::Slider doublerCouplingSlider;
+    juce::Label doublerCouplingLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> doublerCouplingAttachment;
 
     // Controls: Fluid Air & Close-Mic Radiation (Simulates Close Mic vs Pickup Openness)
     juce::Slider micOpennessSlider;
